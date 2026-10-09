@@ -4,6 +4,7 @@
 #include <d3d9.h>
 #include <algorithm>
 #include <map>
+#include <type_traits>
 #include <unordered_map>
 #include <cstring>
 #include <stdexcept>
@@ -46,7 +47,26 @@ uint32_t wrap(IUnknown* native,Kind kind){
     for(uint32_t i=0;i<count;++i)write(table+i*4,methodBase+static_cast<uint32_t>(kind)*4096+i*16);
     write(object,table);objects.emplace(object,Object{native,kind});addresses.emplace(native,object);return object;
 }
-template<class T>T* nativeObject(uint32_t address){if(!address)return nullptr;auto found=objects.find(address);if(found==objects.end())throw std::runtime_error("Invalid D3D9 resource handle");auto native=dynamic_cast<T*>(found->second.native);if(!native)throw std::runtime_error("D3D9 resource interface mismatch");return native;}
+// The guest handle's kind decides the interface: D3D9 interfaces form single
+// inheritance chains from IUnknown, so once the kind matches, static_cast is
+// exact. dynamic_cast on every SetTexture/SetStreamSource cost ~3% of a race.
+template<class T>bool kindMatches(Kind kind){
+    if constexpr(std::is_same_v<T,IDirect3DSurface9>)return kind==Kind::Surface;
+    else if constexpr(std::is_same_v<T,IDirect3DBaseTexture9>)return kind==Kind::Texture||kind==Kind::Cube||kind==Kind::VolumeTexture;
+    else if constexpr(std::is_same_v<T,IDirect3DTexture9>)return kind==Kind::Texture;
+    else if constexpr(std::is_same_v<T,IDirect3DCubeTexture9>)return kind==Kind::Cube;
+    else if constexpr(std::is_same_v<T,IDirect3DVertexBuffer9>)return kind==Kind::VertexBuffer;
+    else if constexpr(std::is_same_v<T,IDirect3DIndexBuffer9>)return kind==Kind::IndexBuffer;
+    else if constexpr(std::is_same_v<T,IDirect3DVertexShader9>)return kind==Kind::VertexShader;
+    else if constexpr(std::is_same_v<T,IDirect3DPixelShader9>)return kind==Kind::PixelShader;
+    else if constexpr(std::is_same_v<T,IDirect3DVertexDeclaration9>)return kind==Kind::Declaration;
+    else return false;
+}
+template<class T>T* nativeObject(uint32_t address){
+    if(!address)return nullptr;auto found=objects.find(address);if(found==objects.end())throw std::runtime_error("Invalid D3D9 resource handle");
+    if(kindMatches<T>(found->second.kind))return static_cast<T*>(found->second.native);
+    auto native=dynamic_cast<T*>(found->second.native);if(!native)throw std::runtime_error("D3D9 resource interface mismatch");return native;
+}
 uint32_t wrapTexture(IDirect3DBaseTexture9* texture){if(!texture)return 0;switch(texture->GetType()){case D3DRTYPE_TEXTURE:return wrap(texture,Kind::Texture);case D3DRTYPE_CUBETEXTURE:return wrap(texture,Kind::Cube);case D3DRTYPE_VOLUMETEXTURE:return wrap(texture,Kind::VolumeTexture);default:throw std::runtime_error("Unknown D3D9 base texture type");}}
 void retireGuestObject(uint32_t address){
     auto found=objects.find(address);if(found==objects.end())return;

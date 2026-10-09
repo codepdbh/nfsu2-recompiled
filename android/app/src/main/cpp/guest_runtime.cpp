@@ -138,7 +138,9 @@ std::map<std::string,uint32_t> modules;
 thread_local uint32_t lastError=0;
 uint32_t imageBase{}, imageSize{}, entry{};
 uint32_t resourceRva{},resourceSize{};
-thread_local uint32_t lastImport{};
+// Set and read under the machine lock with no yield in between (lookup -> call):
+// plain globals, not thread_local, which cost a TLS descriptor call per COM call.
+uint32_t lastImport{};
 std::string hostGameRoot;
 std::string guestLanguage="Spanish";
 bool guestWidescreen=true;
@@ -162,8 +164,9 @@ void checkGuestProgress() {
     // Imports and lifted back edges can reach this hook many times per frame.
     // Keep cancellation immediate, but amortize full register saves and native
     // scheduler handovers over a short time slice rather than every call.
-    thread_local unsigned checkpoints=0;
-    thread_local auto nextYield=std::chrono::steady_clock::time_point::min();
+    // One time slice for whichever guest thread holds the machine.
+    static unsigned checkpoints=0;
+    static auto nextYield=std::chrono::steady_clock::time_point::min();
     if((++checkpoints&63u)==0){
         auto now=std::chrono::steady_clock::now();
         if(now>bootDeadline)throw GuestStop("CRT bring-up time budget reached at "+hex(g_cur_func));
@@ -231,10 +234,10 @@ void heapDestroy() { ret(heaps->destroy(arg(0)),1); }
 void getProcessHeap() { ret(GuestHeaps::process,0); }
 void getProcAddress();
 #if defined(__ANDROID__) || defined(NFS_D3D9_BACKEND)
-thread_local uint32_t d3dToken{};
+uint32_t d3dToken{};
 void direct3DCreate(){ret(createGuestD3D9(arg(0)),1);}
 void freeD3DGuest(uint32_t address){heaps->free(GuestHeaps::process,address);}
-void d3dDispatch(){uint32_t args[32];for(unsigned i=0;i<32;++i)args[i]=arg(i);uint32_t count=0;uint32_t token=d3dToken;
+void d3dDispatch(){uint32_t args[32];std::memcpy(args,ptr(g_esp+4,sizeof args),sizeof args);uint32_t count=0;uint32_t token=d3dToken;
     static uint64_t bridgeCalls=0;static std::chrono::nanoseconds bridgeTime{},presentTime{};
     // Time one call in 64 (and every Present) so the statistic does not cost
     // two clock reads on each of the ~40k calls in a race frame.
@@ -480,7 +483,7 @@ void testGuestCriticalSections(){
     if(!okay)throw GuestStop("Guest critical-section retirement self-check failed");
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Guest critical sections passed recursion, owner, guards, deferred retirement and reinitialization");
 }
-thread_local uint32_t dynamicThunkAddress{};
+uint32_t dynamicThunkAddress{};
 void generatedTestCallback(){++generatedTestCalls;ret(read32(arg(0)),0);}
 void dynamicThunk(){
     uint32_t start=dynamicThunkAddress,pc=start;

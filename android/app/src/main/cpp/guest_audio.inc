@@ -10,7 +10,7 @@ struct SoundObject {
 };
 std::map<uint32_t,SoundObject> soundObjects;
 std::map<uint32_t,uint32_t> soundMethodCalls;
-thread_local uint32_t soundToken{};
+uint32_t soundToken{};
 #ifdef __ANDROID__
 AAudioStream* soundStream=nullptr;
 aaudio_data_callback_result_t soundCallback(AAudioStream*,void*,void* data,int32_t frames){soundMixer.render(static_cast<float*>(data),unsigned(frames));return AAUDIO_CALLBACK_RESULT_CONTINUE;}
