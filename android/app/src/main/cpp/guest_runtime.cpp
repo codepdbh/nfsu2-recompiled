@@ -1,3 +1,4 @@
+#include <condition_variable>
 #include "guest_runtime.h"
 #include "android_resolution.h"
 #include "guest_memory.h"
@@ -5,6 +6,7 @@
 #include "runtime_log.h"
 #if defined(__ANDROID__) || defined(NFS_D3D9_BACKEND)
 #include "d3d9_bridge.h"
+#include "nfs_widescreen.h"
 #endif
 #include <array>
 #include <vector>
@@ -87,8 +89,49 @@ struct State {
 struct Import { std::string name; recomp_func_t function{}; uint64_t calls{}; };
 std::unique_ptr<GuestMemory> memory;
 std::unique_ptr<GuestHeaps> heaps;
-std::recursive_mutex machine;
-thread_local std::unique_lock<std::recursive_mutex>* machineLease=nullptr;
+// The guest machine lock: FIFO by ticket and recursive per thread, with the
+// std::recursive_mutex interface the scheduler code already uses.
+//
+// std::recursive_mutex is not fair. The game thread releases the machine
+// around imports and every 500 us, then asks for it again at once and usually
+// wins; the guest audio mixer thread waited behind it, filled its DirectSound
+// ring too late, and the mixer replayed stale data ("the sound loops"). The
+// same starvation made the Windows build stutter until native32 got a ticket
+// lock. Here every unlock hands the machine to the longest waiter.
+class MachineMutex {
+    std::mutex m_;
+    std::condition_variable cv_;
+    uint64_t next_=0,serving_=0;
+    std::thread::id owner_{};
+    unsigned depth_=0;
+public:
+    void lock(){
+        const auto me=std::this_thread::get_id();
+        std::unique_lock<std::mutex> l(m_);
+        if(owner_==me){++depth_;return;}
+        const uint64_t ticket=next_++;
+        cv_.wait(l,[&]{return serving_==ticket;});
+        owner_=me;depth_=1;
+    }
+    bool try_lock(){
+        const auto me=std::this_thread::get_id();
+        std::lock_guard<std::mutex> l(m_);
+        if(owner_==me){++depth_;return true;}
+        if(next_!=serving_)return false;
+        ++next_;owner_=me;depth_=1;return true;
+    }
+    void unlock(){
+        {
+            std::lock_guard<std::mutex> l(m_);
+            if(--depth_)return;
+            owner_={};++serving_;
+            if(next_==serving_)return;          // nobody waiting
+        }
+        cv_.notify_all();
+    }
+};
+MachineMutex machine;
+thread_local std::unique_lock<MachineMutex>* machineLease=nullptr;
 thread_local uint32_t guestThreadId=1;
 std::vector<Import> imports;
 std::map<std::string,uint32_t> modules;
@@ -98,6 +141,7 @@ uint32_t resourceRva{},resourceSize{};
 thread_local uint32_t lastImport{};
 std::string hostGameRoot;
 std::string guestLanguage="Spanish";
+bool guestWidescreen=true;
 std::atomic<bool> stopRequested{false};
 std::atomic<bool> guestPaused{false};
 std::chrono::steady_clock::time_point bootDeadline;
@@ -191,11 +235,14 @@ thread_local uint32_t d3dToken{};
 void direct3DCreate(){ret(createGuestD3D9(arg(0)),1);}
 void freeD3DGuest(uint32_t address){heaps->free(GuestHeaps::process,address);}
 void d3dDispatch(){uint32_t args[32];for(unsigned i=0;i<32;++i)args[i]=arg(i);uint32_t count=0;uint32_t token=d3dToken;
-    static uint64_t bridgeCalls=0;static std::chrono::nanoseconds bridgeTime{};
-    auto bridgeStart=std::chrono::steady_clock::now();uint32_t result;
+    static uint64_t bridgeCalls=0;static std::chrono::nanoseconds bridgeTime{},presentTime{};
+    // Time one call in 64 (and every Present) so the statistic does not cost
+    // two clock reads on each of the ~40k calls in a race frame.
+    bool timed=(++bridgeCalls&63u)==0||token==0x7e002110u;
+    std::chrono::steady_clock::time_point bridgeStart;if(timed)bridgeStart=std::chrono::steady_clock::now();uint32_t result;
     try{result=dispatchGuestD3D9(token,args,&count);}catch(...){
         NFS_RUNTIME_LOG(ANDROID_LOG_ERROR,"NFSU2","D3D9 guest caller=%08x stack=%08x token=%08x self=%08x",g_cur_func,g_esp,token,args[0]);throw;}
-    bridgeTime+=std::chrono::steady_clock::now()-bridgeStart;++bridgeCalls;
+    if(timed){auto spent=std::chrono::steady_clock::now()-bridgeStart;bridgeTime+=token==0x7e002110u?spent:spent*64;presentTime+=token==0x7e002110u?spent:std::chrono::nanoseconds{};}
     if(token==0x7e002110u&&result==0){
         static unsigned appliedLimit=0;static auto nextFrame=std::chrono::steady_clock::now();
         unsigned cap=frameLimit.load(std::memory_order_relaxed);
@@ -206,9 +253,9 @@ void d3dDispatch(){uint32_t args[32];for(unsigned i=0;i<32;++i)args[i]=arg(i);ui
         if(cap){nextFrame+=std::chrono::nanoseconds(1000000000ull/cap);if(nextFrame>now)std::this_thread::sleep_until(nextFrame);}
         static unsigned frames=0;static auto since=std::chrono::steady_clock::now();
         if(++frames==120){auto now=std::chrono::steady_clock::now();double seconds=std::chrono::duration<double>(now-since).count();
-            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Guest D3D9 presentation %.1f FPS over %.2f seconds; bridge %.2f ms/frame, %.0f calls/frame",
-                frames/seconds,seconds,double(bridgeTime.count())/1e6/frames,double(bridgeCalls)/frames);
-            frames=0;since=now;bridgeTime=std::chrono::nanoseconds{};bridgeCalls=0;}
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Guest D3D9 presentation %.1f FPS over %.2f seconds; bridge ~%.2f ms/frame (present %.2f), %.0f calls/frame",
+                frames/seconds,seconds,double(bridgeTime.count())/1e6/frames,double(presentTime.count())/1e6/frames,double(bridgeCalls)/frames);
+            frames=0;since=now;bridgeTime=presentTime=std::chrono::nanoseconds{};bridgeCalls=0;}
     }ret(result,count);}
 #endif
 uint32_t callGuest(uint32_t va,const std::vector<uint32_t>& args,uint32_t cleanup=0);
@@ -223,7 +270,7 @@ void testGuestScheduling(){
     lastError=111;tlsValues[1087]=0x55;
     bool done=false;std::string failure;
     std::thread worker([&]{
-        std::unique_lock<std::recursive_mutex> lease(machine);machineLease=&lease;guestThreadId=9000;
+        std::unique_lock<MachineMutex> lease(machine);machineLease=&lease;guestThreadId=9000;
         State fresh;fresh.eax=0xaabbccdd;fresh.fs=0xdead1000;fresh.st[0]=-456.25;fresh.xmm[7].u64[0]=0xfedcba9876543210ull;fresh.load();
         lastError=222;tlsValues[1087]=0xaa;
         try{for(unsigned i=0;i<100;++i){checkGuestProgress();yieldGuestMachine();
@@ -521,7 +568,32 @@ void testGeneratedCallbacks(){
 }
 } // namespace
 
+namespace {
+// Every indirect call and virtual method resolves its target here, so use an
+// open-addressing table (built once, read-only afterwards) instead of a binary
+// search over ~28k entries with a cache miss per step.
+struct DispatchHash {
+    static constexpr uint32_t slots=1u<<16;
+    std::unique_ptr<uint32_t[]> keys{new uint32_t[slots]()};
+    std::unique_ptr<recomp_func_t[]> funcs{new recomp_func_t[slots]()};
+    static uint32_t slot(uint32_t va){return (va*0x9e3779b1u)>>16;}
+    DispatchHash(){
+        static_assert(slots>2*27742,"dispatch hash load factor");
+        for(uint32_t i=0;i<recomp_dispatch_count;++i){
+            uint32_t va=recomp_dispatch_table[i].address,s=slot(va);
+            while(keys[s])s=(s+1)&(slots-1);
+            keys[s]=va;funcs[s]=recomp_dispatch_table[i].func;
+        }
+    }
+    recomp_func_t find(uint32_t va)const{
+        if(!va)return nullptr;
+        for(uint32_t s=slot(va);keys[s];s=(s+1)&(slots-1))if(keys[s]==va)return funcs[s];
+        return nullptr;
+    }
+};
+}
 extern "C" recomp_func_t recomp_lookup(uint32_t va) {
+    if(recomp_dispatch_count<DispatchHash::slots/2){static const DispatchHash hash;return hash.find(va);}
     uint32_t lo=0,hi=recomp_dispatch_count;
     while (lo<hi) { uint32_t mid=lo+(hi-lo)/2, address=recomp_dispatch_table[mid].address;
         if (address==va) return recomp_dispatch_table[mid].func;
@@ -597,13 +669,13 @@ extern "C" int nfs_android_resolution(){
     uint32_t index=read32(0x870d1c);if(index>=guestRenderModes.size())throw GuestStop("Invalid Android resolution index");
     width=guestRenderModes[index].width;height=guestRenderModes[index].height;
     if(!memory->writable(arg(0),4)||!memory->writable(arg(1),4))throw GuestStop("Invalid guest resolution outputs");
-    write32(arg(0),width);write32(arg(1),height);ret(0,2);
+    write32(arg(0),width);write32(arg(1),height);ret(0,2);nfs_widescreen_set_resolution(width,height);
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Guest render resolution %ux%u slot=%u via original selector",width,height,index);
     return 1;
 }
 
 std::string connectGuestRuntime(const char* executable) {
-    std::unique_lock<std::recursive_mutex> guard(machine);machineLease=&guard;
+    std::unique_lock<MachineMutex> guard(machine);machineLease=&guard;
     if (memory) return "Runtime guest ya inicializado";
     State original; original.save();
     try {
@@ -625,6 +697,10 @@ std::string connectGuestRuntime(const char* executable) {
         configureD3D9Bridge(memory->base(),allocate,freeD3DGuest);
 #endif
         loadImage(executable);
+        if(guestWidescreen){
+            nfs_widescreen_init(hostGameRoot.c_str());
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen: %d HUD offsets from scripts/NFSUnderground2.WidescreenFix.dat",nfs_widescreen_hud_entries());
+        }else NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen disabled: original 4:3 geometry");
         if(renderWidth.load()&&renderHeight.load())configureAndroidResolutionModes();
         memory->commit(stackBase,stackSize); memory->commit(tib,0x1000);
         State fresh; fresh.esp=stackBase+stackSize-64; fresh.fs=tib; fresh.load();
@@ -671,7 +747,7 @@ void setGuestPaused(bool paused) {guestPaused=paused;}
 bool guestDrivingControls() {return inputDrivingMode.load();}
 void setGuestDisplaySize(unsigned width,unsigned height){displayWidth=width;displayHeight=height;}
 void setGuestResolution(unsigned width,unsigned height){
-    std::lock_guard<std::recursive_mutex> lock(machine);if(memory)return;
+    std::lock_guard<MachineMutex> lock(machine);if(memory)return;
     if(width<320||height<240||width>8192||height>8192){renderWidth=renderHeight=0;return;}
     renderWidth=width;renderHeight=height;
 #if defined(__ANDROID__) || defined(NFS_D3D9_BACKEND)
@@ -685,8 +761,9 @@ void setGuestFrameLimit(unsigned framesPerSecond){
 }
 void setGuestKey(unsigned scan,bool down){if(scan>=256)return;std::lock_guard<std::mutex> lock(inputMutex);if(bool(inputKeys[scan])==down)return;inputKeys[scan]=down?0x80:0;recordInputKey(scan,down);enqueueGuestKey(scan,down);}
 void clearGuestInput(){std::lock_guard<std::mutex> lock(inputMutex);for(unsigned scan=0;scan<256;++scan)if(inputKeys[scan]){recordInputKey(scan,false);enqueueGuestKey(scan,false);}inputKeys.fill(0);inputMouseButtons.fill(0);inputMouseX=inputMouseY=inputMouseZ=0;}
+void setGuestWidescreen(bool enabled){std::lock_guard<MachineMutex> lock(machine);if(!memory)guestWidescreen=enabled;}
 void setGuestLanguage(const char* language){
-    std::lock_guard<std::recursive_mutex> lock(machine);if(memory)return;
+    std::lock_guard<MachineMutex> lock(machine);if(memory)return;
     for(const char* known:{"Spanish","English UK","French","German","Italian","Dutch","Swedish","Danish","Japanese","Korean","Chinese (Traditional)","Thai"})
         if(language&&std::strcmp(known,language)==0){guestLanguage=known;NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Selected guest language: %s",known);return;}
     guestLanguage="Spanish";

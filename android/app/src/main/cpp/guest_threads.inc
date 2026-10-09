@@ -50,7 +50,7 @@ void setEvent(){auto event=eventHandles.find(arg(0));if(event==eventHandles.end(
 void resetEvent(){auto event=eventHandles.find(arg(0));if(event==eventHandles.end()){lastError=6;ret(0,1);return;}event->second->signaled=false;ret(1,1);}
 void* guestThreadEntry(void* context){
     auto& thread=*static_cast<GuestThread*>(context);
-    std::unique_lock<std::recursive_mutex> lease(machine);machineLease=&lease;guestThreadId=thread.id;
+    std::unique_lock<MachineMutex> lease(machine);machineLease=&lease;guestThreadId=thread.id;
     State fresh;fresh.esp=thread.stack+(4u<<20)-64;fresh.fs=thread.tib;fresh.load();
     try {
         while(thread.suspended){checkGuestProgress();yieldGuestMachine(1);}
@@ -117,7 +117,7 @@ void waitThread(){
     if(event&&!event->manual)event->signaled=false;
     ret(0,2);
 }
-void joinGuestThreads(std::unique_lock<std::recursive_mutex>& lease){
+void joinGuestThreads(std::unique_lock<MachineMutex>& lease){
     stopRequested=true;lease.unlock();
     for(auto& thread:guestThreads)if(thread->started){pthread_join(thread->native,nullptr);thread->started=false;}
     lease.lock();

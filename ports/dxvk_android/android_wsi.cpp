@@ -11,6 +11,7 @@
 struct ANativeWindow {Display* display;Window window;uint32_t width,height;};
 #endif
 #include <mutex>
+#include <atomic>
 #include <algorithm>
 #include <cstdint>
 #include "src/wsi/wsi_presenter.h"
@@ -28,6 +29,13 @@ HWND currentHandle=nullptr;
 uint32_t screenWidth=1280,screenHeight=720;
 uint32_t renderWidth=0,renderHeight=0;
 HMONITOR monitor(){return reinterpret_cast<HMONITOR>(uintptr_t{1});}
+// The Vulkan driver DXVK talks to: the linked system loader, or an imported
+// adrenotools driver chosen in the launcher (set before the device exists).
+std::atomic<PFN_vkGetInstanceProcAddr> instanceProcAddr{nullptr};
+}
+extern "C" void dxvkAndroidSetInstanceProcAddr(PFN_vkGetInstanceProcAddr entry){instanceProcAddr=entry;}
+extern "C" PFN_vkGetInstanceProcAddr dxvkAndroidGetInstanceProcAddr(){
+    auto entry=instanceProcAddr.load();return entry?entry:vkGetInstanceProcAddr;
 }
 extern "C" void dxvkAndroidSetRenderSize(uint32_t width,uint32_t height){std::lock_guard<std::mutex> guard(windowMutex);renderWidth=width;renderHeight=height;}
 extern "C" HWND dxvkAndroidGetWindowHandle(){std::lock_guard<std::mutex> guard(windowMutex);return currentHandle;}
@@ -72,7 +80,7 @@ VkResult createSurface(HWND window,const Rc<vk::InstanceFn>& instance,VkSurfaceK
     std::lock_guard<std::mutex> guard(windowMutex);
     if(!currentWindow||window!=currentHandle)return VK_ERROR_SURFACE_LOST_KHR;
 #ifdef __ANDROID__
-    auto create=reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(vkGetInstanceProcAddr(instance->instance(),"vkCreateAndroidSurfaceKHR"));
+    auto create=reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(dxvkAndroidGetInstanceProcAddr()(instance->instance(),"vkCreateAndroidSurfaceKHR"));
     if(!create)return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkAndroidSurfaceCreateInfoKHR info{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};info.window=currentWindow;
     return create(instance->instance(),&info,nullptr,surface);

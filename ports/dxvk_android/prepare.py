@@ -36,6 +36,12 @@ replace("src/util/util_bit.h", "#if defined(__GNUC__) || defined(__clang__) || d
 replace("src/util/sync/sync_spinlock.h", "_mm_pause();", '#if defined(__aarch64__)\n        asm volatile("yield");\n#else\n        _mm_pause();\n#endif')
 replace("src/util/util_vector.h", "    __m128 value = _mm_load_ps(a.data);", "#if defined(__aarch64__)\n    for (unsigned i = 0; i < 4; ++i) result.data[i] = a.data[i] == a.data[i] ? a.data[i] : 0.0f;\n#else\n    __m128 value = _mm_load_ps(a.data);")
 replace("src/util/util_vector.h", "    _mm_store_ps(result.data, value);", "    _mm_store_ps(result.data, value);\n#endif")
+# Android reports VK_SUBOPTIMAL_KHR for every landscape present (the image is not
+# pre-rotated; the compositor rotates it). Treating that as a failed present recreated
+# the swap chain, with a vkDeviceWaitIdle, on every frame.
+replace("src/d3d9/d3d9_swapchain.cpp", '    VkResult status = m_device->waitForSubmission(&m_presentStatus);\n\n    if (status != VK_SUCCESS)\n      RecreateSwapChain(m_vsync);', '    VkResult status = m_device->waitForSubmission(&m_presentStatus);\n\n    if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR)\n      RecreateSwapChain(m_vsync);')
+# DXVK resolves Vulkan through the driver selected at runtime, not the linked loader.
+replace("src/vulkan/vulkan_loader.cpp", '  static const PFN_vkGetInstanceProcAddr GetInstanceProcAddr = vkGetInstanceProcAddr;', '  // Android: the driver chosen in the launcher (system or adrenotools), see android_wsi.cpp.\n  extern "C" PFN_vkGetInstanceProcAddr dxvkAndroidGetInstanceProcAddr();\n  static PFN_vkVoidFunction GetInstanceProcAddr(VkInstance instance, const char* name) {\n    return dxvkAndroidGetInstanceProcAddr()(instance, name);\n  }')
 (args.output / "version.h").write_text('#define DXVK_VERSION "native-1.9.2b-android-arm64"\n')
 (args.output / "PINNED_REVISION").write_text(PIN + "\n")
 print("Prepared DXVK " + PIN)

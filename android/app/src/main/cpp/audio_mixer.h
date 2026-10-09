@@ -32,8 +32,11 @@ public:
     }
     void render(float* output,unsigned frames){
         std::fill(output,output+frames*2,0.f);
-        // AAudio's callback must never wait for the guest's buffer upload.
-        std::unique_lock<std::mutex> lock(mutex,std::try_to_lock);if(!lock)return;
+        // The guest holds this lock only for short copies of the regions it
+        // unlocked and for cursor queries, so waiting is bounded. Skipping a
+        // burst instead output silence and left every play cursor where it
+        // was, so the game's view of what had played drifted from what had.
+        std::lock_guard<std::mutex> lock(mutex);
         for(auto& voice:voices){
             if(!voice||!voice->playing||voice->samples.empty())continue;
             size_t count=voice->samples.size()/voice->block();if(!count)continue;

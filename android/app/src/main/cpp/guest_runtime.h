@@ -9,6 +9,8 @@ void setGuestDisplaySize(unsigned width,unsigned height);
 void setGuestKey(unsigned scan,bool down);
 void clearGuestInput();
 bool guestDrivingControls();
+// Launcher option; only before the guest boots.
+void setGuestWidescreen(bool enabled);
 void setGuestLanguage(const char* language);
 void setGuestResolution(unsigned width,unsigned height);
 void setGuestFrameLimit(unsigned framesPerSecond);

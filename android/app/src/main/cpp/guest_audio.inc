@@ -118,7 +118,13 @@ void soundDispatch(){
     case 18:{std::lock_guard<std::mutex> lock(soundMixer.mutex);voice->playing=false;ret(0,1);return;}
     case 19:{uint32_t bytes=uint32_t(voice->samples.size()),first=std::min(object.lockBytes,bytes-object.lockOffset),second=object.lockBytes-first;
         if(!object.locked||arg(1)!=object.guestSamples+object.lockOffset||arg(2)!=first||arg(3)!=(second?object.guestSamples:0)||arg(4)!=second){ret(0x80070057,5);return;}
-        {std::lock_guard<std::mutex> lock(soundMixer.mutex);std::memcpy(voice->samples.data(),ptr(object.guestSamples,bytes),bytes);}object.locked=false;ret(0,5);return;}
+        // Publish only what the guest locked. Copying the whole ring under the
+        // mixer lock made every Unlock stall the AAudio callback and could
+        // overwrite samples still being played with a stale copy.
+        {std::lock_guard<std::mutex> lock(soundMixer.mutex);
+            std::memcpy(voice->samples.data()+object.lockOffset,ptr(object.guestSamples+object.lockOffset,first),first);
+            if(second)std::memcpy(voice->samples.data(),ptr(object.guestSamples,second),second);}
+        object.locked=false;ret(0,5);return;}
     case 20:ret(0,1);return; // Software-owned buffers cannot be lost by the driver.
     default:throw GuestStop("DirectSound buffer method pending: "+std::to_string(method));
     }

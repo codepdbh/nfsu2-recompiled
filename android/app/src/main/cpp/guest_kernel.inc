@@ -46,7 +46,9 @@ void enterCritical() {
     uint32_t address=arg(0); auto cs=criticalSections.find(address);
     if(cs==criticalSections.end()) throw GuestStop("EnterCriticalSection without initialization");
     auto mutex=cs->second;
-    while(!mutex->try_lock()){checkGuestProgress();yieldGuestMachine(1);}
+    // Contended: hand the machine over (the fair lock gives it to the waiting
+    // owner) instead of sleeping 1 ms per attempt; sleep only if it persists.
+    for(unsigned spins=0;!mutex->try_lock();++spins){checkGuestProgress();yieldGuestMachine(spins<64?0:1);}
     cs=criticalSections.find(address);
     if(cs==criticalSections.end()||cs->second!=mutex){mutex->unlock();throw GuestStop("Critical section deleted while waiting");}
     auto count=read32(address+8)+1; write32(address+8,count); write32(address+4,count-1); write32(address+12,guestThreadId);ret(0,1);
