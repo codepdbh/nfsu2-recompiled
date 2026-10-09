@@ -109,6 +109,27 @@ int nfs_widescreen_hud_entries(void) { return (int)s_hud_count; }
 
 void nfs_widescreen_set_minimap_offset(float dy) { s_minimap_dy = dy; }
 
+/* FPSLimit (the mod's Misc.ixx): the game paces its main loop with a fixed
+ * frame time of 1/60 s. SetFrameRate (0x576CB0) stores 1/fps in 0x865558 and
+ * the loop at 0x57EB0A waits for it; the video-mode, smokeable and step
+ * constants carry the same 1/60. They are data, so the lifted code reads
+ * whatever is written here. */
+static float s_frame_time = 0.0f;
+
+void nfs_widescreen_set_frame_rate(unsigned fps) {
+    s_frame_time = fps >= 30 ? 1.0f / (float)fps : 0.0f;
+}
+
+void nfs_widescreen_apply_frame_rate(void) {
+    if (s_frame_time <= 0.0f) return;
+    if (rdf(0x00865558u) != s_frame_time) {
+        wrf(0x00865558u, s_frame_time);   /* main loop pacing (SetFrameRate) */
+        wrf(0x007FB710u, s_frame_time);
+        wrf(0x007875BCu, s_frame_time);   /* video mode frame time */
+        wrf(0x007FC858u, s_frame_time);   /* smokeable frame time */
+    }
+}
+
 static void set_esp_float(uint32_t offset, float value) { wrf(g_esp + offset, value); }
 
 void recomp_hook(uint32_t va) {

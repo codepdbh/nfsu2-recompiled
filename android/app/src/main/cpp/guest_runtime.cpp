@@ -243,6 +243,7 @@ void d3dDispatch(){uint32_t args[32];for(unsigned i=0;i<32;++i)args[i]=arg(i);ui
     try{result=dispatchGuestD3D9(token,args,&count);}catch(...){
         NFS_RUNTIME_LOG(ANDROID_LOG_ERROR,"NFSU2","D3D9 guest caller=%08x stack=%08x token=%08x self=%08x",g_cur_func,g_esp,token,args[0]);throw;}
     if(timed){auto spent=std::chrono::steady_clock::now()-bridgeStart;bridgeTime+=token==0x7e002110u?spent:spent*64;presentTime+=token==0x7e002110u?spent:std::chrono::nanoseconds{};}
+    if(token==0x7e002110u)nfs_widescreen_apply_frame_rate();
     if(token==0x7e002110u&&result==0){
         static unsigned appliedLimit=0;static auto nextFrame=std::chrono::steady_clock::now();
         unsigned cap=frameLimit.load(std::memory_order_relaxed);
@@ -756,7 +757,9 @@ void setGuestResolution(unsigned width,unsigned height){
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Selected render resolution %ux%u",width,height);
 }
 void setGuestFrameLimit(unsigned framesPerSecond){
-    frameLimit=(framesPerSecond==30||framesPerSecond==60||framesPerSecond==120)?framesPerSecond:0;
+    frameLimit=(framesPerSecond>=30&&framesPerSecond<=240)?framesPerSecond:0;
+    // The game paces itself to 1/60 s; let it run at the cap (uncapped: the 120 Hz display).
+    nfs_widescreen_set_frame_rate(frameLimit.load()?frameLimit.load():120);
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Android frame limit %u FPS (0 means uncapped)",frameLimit.load());
 }
 void setGuestKey(unsigned scan,bool down){if(scan>=256)return;std::lock_guard<std::mutex> lock(inputMutex);if(bool(inputKeys[scan])==down)return;inputKeys[scan]=down?0x80:0;recordInputKey(scan,down);enqueueGuestKey(scan,down);}
