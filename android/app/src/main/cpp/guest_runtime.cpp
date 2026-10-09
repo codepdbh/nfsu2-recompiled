@@ -39,7 +39,9 @@ extern "C" {
 #include "nfs_runtime.h"
 
 uint32_t g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi, g_ebp;
+#ifndef RECOMP_X87_WINDOW
 double g_st[8];
+#endif
 int g_fp_top;
 uint16_t g_fpu_cw = 0x027f;
 uint16_t g_seg_cs, g_seg_ds, g_seg_es, g_seg_fs, g_seg_gs, g_seg_ss;

@@ -45,7 +45,10 @@ target_include_directories(nfs_guest PRIVATE "${PCRECOMP}/runtime/recomp32" "${G
 # keeps the untyped guest memory correct, and lifted loops still make an opaque
 # call per back-edge. -fwrapv: x86 integer arithmetic wraps. Both validated by
 # scripts/difftest_real.py --cc clang-o2 --local-regs (same result as MSVC).
-target_compile_definitions(nfs_guest PRIVATE RECOMP_STRICT_ICALL RECOMP_LOCAL_REGS "RECOMP_MEM_QUAL=")
+# RECOMP_X87_WINDOW: the x87 stack is a sliding window (push/pop move one
+# index instead of shifting 16 values). Every unit of the library must agree,
+# so nfsu2_android (runtime, overrides, widescreen) defines it too.
+target_compile_definitions(nfs_guest PRIVATE RECOMP_STRICT_ICALL RECOMP_LOCAL_REGS RECOMP_X87_WINDOW "RECOMP_MEM_QUAL=")
 # Optimize the ARM64 game while avoiding aliasing assumptions in x86 accesses;
 # retain unwind tables so unsupported HLE paths can exit to the host cleanly.
 target_compile_options(nfs_guest PRIVATE -O2 -w -fwrapv -fno-strict-aliasing -fexceptions -ffp-contract=off
@@ -70,7 +73,7 @@ add_library(nfsu2_android SHARED main.cpp guest_runtime.cpp d3d9_bridge.cpp vulk
 target_include_directories(nfsu2_android SYSTEM PRIVATE "${DXVK_SOURCE}/include/native"
   "${DXVK_SOURCE}/include/native/windows" "${DXVK_SOURCE}/include/native/directx")
 target_include_directories(nfsu2_android PRIVATE "${PCRECOMP}/runtime/recomp32" "${PCRECOMP}/runtime/win32hle" "${NFS_ROOT}/src/runtime")
-target_compile_definitions(nfsu2_android PRIVATE RECOMP_STRICT_ICALL)
+target_compile_definitions(nfsu2_android PRIVATE RECOMP_STRICT_ICALL RECOMP_X87_WINDOW)
 target_compile_features(nfsu2_android PRIVATE cxx_std_17)
 target_compile_definitions(nfsu2_android PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_compile_options(nfsu2_android PRIVATE -O2 -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)

@@ -109,6 +109,7 @@ def main():
     ap.add_argument("--fp-only", action="store_true"); ap.add_argument("--sse-only", action="store_true")
     ap.add_argument("--func", nargs="*", default=[])
     ap.add_argument("--local-regs", action="store_true", help="compile with RECOMP_LOCAL_REGS")
+    ap.add_argument("--x87-window", action="store_true", help="compile with RECOMP_X87_WINDOW")
     ap.add_argument("--cc", default="msvc", choices=("msvc", "clang-o2"),
                     help="msvc: cl /O1 (the Windows build); clang-o2: clang-cl -O2 -fwrapv "
                          "-fno-strict-aliasing with non-volatile guest memory (the Android build's flags)")
@@ -170,13 +171,17 @@ def main():
 #include <stdint.h>
 #include "recomp_types.h"
 uint32_t g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi, g_ebp;
-double g_st[8]; int g_fp_top; uint16_t g_fpu_cw = 0x027F;
+#ifndef RECOMP_X87_WINDOW
+double g_st[8];
+#endif
+int g_fp_top; uint16_t g_fpu_cw = 0x027F;
 uint16_t g_seg_cs, g_seg_ds, g_seg_es, g_seg_fs, g_seg_gs, g_seg_ss;
 uint64_t g_mm[8]; V128 g_xmm[8]; uint32_t g_mxcsr = 0x1F80;
 uint32_t g_fs_base, g_gs_base, g_cur_func; ptrdiff_t g_mem_base;
 uint32_t g_icall_trace[ICALL_TRACE_SIZE], g_icall_from[ICALL_TRACE_SIZE], g_icall_trace_idx, g_icall_count;
 const char *g_cur_import;
 void recomp_dump_trace(const char *w) { (void)w; }
+void recomp_hook(uint32_t va) { (void)va; }
 void recomp_unimpl(uint32_t va, const char *w) { RaiseException(0xE0000001, 0, 0, 0); }
 recomp_func_t recomp_lookup(uint32_t va) { return 0; }
 recomp_func_t recomp_lookup_manual(uint32_t va) { return 0; }
@@ -204,7 +209,10 @@ int main(int argc, char **argv) {
   while (fscanf(cf, "%d %x %x %x %x %x %x %x %x", &fi, &r[0], &r[1], &r[2], &r[3], &r[4], &r[5], &r[6], &r[7]) == 9) {
     memcpy(M(0x400000), img, ni); memcpy(M(0x10000000), scr, ns); memcpy(M(0x20000000), stk, nk);
     g_eax = r[0]; g_ecx = r[1]; g_edx = r[2]; g_ebx = r[3]; g_esp = r[4]; g_ebp = r[5]; g_esi = r[6]; g_edi = r[7];
-    memset(g_st, 0, sizeof g_st); g_fp_top = 0; g_fpu_cw = 0x027F; memset(g_xmm, 0, sizeof g_xmm); memset(g_mm, 0, sizeof g_mm);
+#ifdef RECOMP_X87_WINDOW
+    g_fp_sp = RECOMP_X87_SLOTS / 2;
+#endif
+    memset(g_st, 0, 8 * sizeof(double)); g_fp_top = 0; g_fpu_cw = 0x027F; memset(g_xmm, 0, sizeof g_xmm); memset(g_mm, 0, sizeof g_mm);
     g_flag_k = g_flag_a = g_flag_b = g_flag_cf = 0;
     g_esp -= 4; *(uint32_t *)M(g_esp) = 0xDEAD0000u;
     int fault = 0; g_budget = 0; g_backedges = 0;
@@ -236,6 +244,8 @@ int main(int argc, char **argv) {
         cmd = ["cl", "-nologo", "-O1", "-w", "-bigobj", "-I" + rt, cpath, "-Fe" + exe, "-Fo" + args.out + os.sep]
     if args.local_regs:
         cmd.insert(2, "-DRECOMP_LOCAL_REGS")
+    if args.x87_window:
+        cmd.insert(2, "-DRECOMP_X87_WINDOW")
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode:
         print(r.stdout[-3000:]); sys.exit("compile failed (run from an x64 MSVC environment: source scripts/vsenv.sh x64)")
