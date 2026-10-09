@@ -1,7 +1,7 @@
 From f3e752cc9a8c47326083f4b7b939be5b1220577a Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Fri, 9 Oct 2026 09:04:03 -0400
-Subject: [PATCH 12/13] recomp_types/lift32: optional non-volatile guest memory
+Subject: [PATCH 12/14] recomp_types/lift32: optional non-volatile guest memory
  (RECOMP_MEM_QUAL) and local registers (RECOMP_LOCAL_REGS) in lift_function
 
 - RECOMP_MEM_QUAL qualifies every MEMn access (default volatile, as before).

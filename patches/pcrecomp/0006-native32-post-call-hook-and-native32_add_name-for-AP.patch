@@ -1,7 +1,7 @@
 From f1525776dd6d95eca1c92e5b0e806bb13bba14a0 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Tue, 6 Oct 2026 16:13:00 -0400
-Subject: [PATCH 06/13] native32: post-call hook and native32_add_name for API
+Subject: [PATCH 06/14] native32: post-call hook and native32_add_name for API
  tracing; record each native call's result
 
 ---

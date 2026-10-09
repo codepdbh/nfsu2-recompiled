@@ -1,7 +1,7 @@
 From 876fc655b794c7be7870e74af61ca5fd8ac37ba9 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Tue, 6 Oct 2026 12:43:13 -0400
-Subject: [PATCH 03/13] recomp_types: RECOMP_STRICT_ICALL routes unresolved
+Subject: [PATCH 03/14] recomp_types: RECOMP_STRICT_ICALL routes unresolved
  ICALL/ITAIL to a host hook
 
 The default prints and returns eax = 0, which lets a program continue

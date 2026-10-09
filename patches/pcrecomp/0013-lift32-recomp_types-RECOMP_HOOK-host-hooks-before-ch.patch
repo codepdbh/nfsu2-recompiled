@@ -1,7 +1,7 @@
 From 081bc6646bbacc410e5d18d45c9fab23d9e8c06c Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Fri, 9 Oct 2026 10:46:30 -0400
-Subject: [PATCH 13/13] lift32/recomp_types: RECOMP_HOOK, host hooks before
+Subject: [PATCH 13/14] lift32/recomp_types: RECOMP_HOOK, host hooks before
  chosen instructions (Lifter hook_sites)
 
 ---

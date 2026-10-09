@@ -1,7 +1,7 @@
 From 9a242d9fe5fecaec81e826b5b54029d78c544518 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Wed, 7 Oct 2026 15:22:02 -0400
-Subject: [PATCH 10/13] recomp_types: RECOMP_NATIVE_RANGE, run a VA range of
+Subject: [PATCH 10/14] recomp_types: RECOMP_NATIVE_RANGE, run a VA range of
  lifted functions as the original code
 
 Bisection aid for a hybrid host: RECOMP_ENTER diverts functions in
