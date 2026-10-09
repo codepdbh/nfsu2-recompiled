@@ -31,10 +31,10 @@ replace("src/d3d9/d3d9_device.cpp", "enabled.core.features.textureCompressionBC 
 
 replace("src/util/util_bit.h", "#ifndef _MSC_VER", "#if defined(__i386__) || defined(__x86_64__)\n#ifndef _MSC_VER")
 replace("src/util/util_bit.h", '#include "util_likely.h"', '#endif // x86 intrinsics\n#include "util_likely.h"')
-replace("src/util/util_bit.h", "#elif defined(__GNUC__) || defined(__clang__)\n    uint32_t res;", "#elif defined(__aarch64__)\n    return n ? __builtin_ctz(n) : 32;\n    #elif defined(__GNUC__) || defined(__clang__)\n    uint32_t res;")
+replace("src/util/util_bit.h", "#elif defined(__GNUC__) || defined(__clang__)\n    uint32_t res;", "#elif defined(__aarch64__) || defined(__arm__)\n    return n ? __builtin_ctz(n) : 32;\n    #elif defined(__GNUC__) || defined(__clang__)\n    uint32_t res;")
 replace("src/util/util_bit.h", "#if defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER)", "#if defined(__i386__) || defined(__x86_64__)")
-replace("src/util/sync/sync_spinlock.h", "_mm_pause();", '#if defined(__aarch64__)\n        asm volatile("yield");\n#else\n        _mm_pause();\n#endif')
-replace("src/util/util_vector.h", "    __m128 value = _mm_load_ps(a.data);", "#if defined(__aarch64__)\n    for (unsigned i = 0; i < 4; ++i) result.data[i] = a.data[i] == a.data[i] ? a.data[i] : 0.0f;\n#else\n    __m128 value = _mm_load_ps(a.data);")
+replace("src/util/sync/sync_spinlock.h", "_mm_pause();", '#if defined(__aarch64__) || defined(__arm__)\n        asm volatile("yield");\n#else\n        _mm_pause();\n#endif')
+replace("src/util/util_vector.h", "    __m128 value = _mm_load_ps(a.data);", "#if defined(__aarch64__) || defined(__arm__)\n    for (unsigned i = 0; i < 4; ++i) result.data[i] = a.data[i] == a.data[i] ? a.data[i] : 0.0f;\n#else\n    __m128 value = _mm_load_ps(a.data);")
 replace("src/util/util_vector.h", "    _mm_store_ps(result.data, value);", "    _mm_store_ps(result.data, value);\n#endif")
 # Android reports VK_SUBOPTIMAL_KHR for every landscape present (the image is not
 # pre-rotated; the compositor rotates it). Treating that as a failed present recreated

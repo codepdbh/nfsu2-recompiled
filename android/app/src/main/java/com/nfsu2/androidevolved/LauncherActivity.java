@@ -184,7 +184,9 @@ public final class LauncherActivity extends Activity {
     private void refreshOptions() {
         optionsList.removeAllViews();
         GpuDrivers.Driver driver = GpuDrivers.selected(this);
-        optionsList.addView(optionRow("Driver Vulkan", driver == null ? "Del sistema" : driver.name, this::chooseDriver));
+        // Custom drivers (libadrenotools) exist only in the 64-bit build.
+        if (android.os.Process.is64Bit())
+            optionsList.addView(optionRow("Driver Vulkan", driver == null ? "Del sistema" : driver.name, this::chooseDriver));
         optionsList.addView(optionRow("Probar driver", "GPU y funciones Vulkan", () -> probeDriver(false)));
         optionsList.addView(optionRow("Idioma", languageLabel(), this::chooseLanguage));
         for (GameOptions.Option option : GameOptions.ALL)
@@ -396,7 +398,7 @@ public final class LauncherActivity extends Activity {
     // ---- Launch ----------------------------------------------------------------------------------------
 
     private void play() {
-        if (GpuDrivers.selected(this) != null) probeDriver(true);
+        if (android.os.Process.is64Bit() && GpuDrivers.selected(this) != null) probeDriver(true);
         else launch();
     }
 

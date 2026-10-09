@@ -112,7 +112,7 @@ final class GpuDrivers {
     }
     /** {hooks dir, temp dir, driver dir, library}; empty driver fields select the system driver. */
     static String[] loaderArguments(Context context) {
-        Driver driver = selected(context);
+        Driver driver = android.os.Process.is64Bit() ? selected(context) : null;
         return new String[] {context.getApplicationInfo().nativeLibraryDir, context.getCacheDir().getAbsolutePath(),
                 driver == null ? "" : driver.directory.getAbsolutePath() + "/", driver == null ? "" : driver.library};
     }

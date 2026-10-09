@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(NFSU2AndroidBootstrap C CXX)
-if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
-    message(FATAL_ERROR "This target requires Android arm64-v8a")
+if(NOT ANDROID OR NOT (ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "armeabi-v7a"))
+    message(FATAL_ERROR "This target requires Android arm64-v8a or armeabi-v7a")
+endif()
+# libadrenotools (custom Vulkan drivers) exists for arm64 only.
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(NFS_CUSTOM_DRIVERS ON)
+else()
+    set(NFS_CUSTOM_DRIVERS OFF)
 endif()
 add_library(native_app_glue STATIC "${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c")
 target_include_directories(native_app_glue PUBLIC "${ANDROID_NDK}/sources/android/native_app_glue")
@@ -60,14 +66,23 @@ target_compile_options(nfs_guest PRIVATE -O2 -w -fwrapv -fno-strict-aliasing -fe
 # it only slows the build of 9M generated lines.
 option(NFS_GUEST_LTO "ThinLTO over the lifted game code" ON)
 target_compile_options(nfs_guest PRIVATE -g0 -fvisibility=hidden)
+# ARMv7: guest data is only as aligned as x86 needed, but the lifted code reads
+# floats and doubles through plain pointers, and the compiler would use
+# LDRD/STRD/VLDR, which fault on such addresses (SIGBUS BUS_ADRALN). ARM64
+# loads tolerate it; on 32-bit assume no alignment for unannotated pointers.
+if(ANDROID_ABI STREQUAL "armeabi-v7a")
+    target_compile_options(nfs_guest PRIVATE -fmax-type-align=1)
+endif()
 if(NFS_GUEST_LTO)
     target_compile_options(nfs_guest PRIVATE -flto=thin)
 endif()
 # Custom Vulkan drivers (Turnip, ...) imported in the launcher, as in the MW/Carbon ports.
 # libadrenotools is pinned in third_party/ (BSD-2-Clause); no driver is bundled.
-add_subdirectory("${NFS_ROOT}/third_party/libadrenotools" "${CMAKE_CURRENT_BINARY_DIR}/adrenotools")
+if(NFS_CUSTOM_DRIVERS)
+    add_subdirectory("${NFS_ROOT}/third_party/libadrenotools" "${CMAKE_CURRENT_BINARY_DIR}/adrenotools")
+endif()
 add_library(nfsu2_diagnostics SHARED gpu_probe.cpp vulkan_driver.cpp)
-target_link_libraries(nfsu2_diagnostics PRIVATE adrenotools android log dl)
+target_link_libraries(nfsu2_diagnostics PRIVATE android log dl)
 target_compile_options(nfsu2_diagnostics PRIVATE -O2 -Wall -Wextra -Werror -Wno-missing-field-initializers)
 add_library(nfsu2_android SHARED main.cpp guest_runtime.cpp d3d9_bridge.cpp vulkan_driver.cpp "${NFS_ROOT}/src/runtime/overrides.c" "${NFS_ROOT}/src/runtime/widescreen.c" $<TARGET_OBJECTS:nfs_guest>)
 target_include_directories(nfsu2_android SYSTEM PRIVATE "${DXVK_SOURCE}/include/native"
@@ -78,7 +93,7 @@ target_compile_features(nfsu2_android PRIVATE cxx_std_17)
 target_compile_definitions(nfsu2_android PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_compile_options(nfsu2_android PRIVATE -O2 -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)
 target_link_options(nfsu2_android PRIVATE "-uANativeActivity_onCreate")
-target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio adrenotools dl)
+target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio dl)
 if(NFS_GUEST_LTO)
     target_link_options(nfsu2_android PRIVATE -flto=thin "-Wl,--thinlto-jobs=4"
         "-Wl,--thinlto-cache-dir=${CMAKE_BINARY_DIR}/thinlto-cache")
@@ -90,9 +105,15 @@ endif()
 foreach(target nfsu2_android nfsu2_diagnostics)
     target_link_options(${target} PRIVATE "-Wl,--exclude-libs,libadrenotools.a:liblinkernsbypass.a" "-Wl,-z,max-page-size=16384")
 endforeach()
-target_link_options(hook_impl PRIVATE "-Wl,--exclude-libs,ALL")
-foreach(target adrenotools main_hook file_redirect_hook gsl_alloc_hook hook_impl)
-    target_link_options(${target} PRIVATE "-Wl,-z,max-page-size=16384")
-endforeach()
-# adrenotools opens these from nativeLibraryDir at run time.
-add_dependencies(nfsu2_android main_hook file_redirect_hook gsl_alloc_hook hook_impl)
+if(NFS_CUSTOM_DRIVERS)
+    foreach(target nfsu2_android nfsu2_diagnostics)
+        target_link_libraries(${target} PRIVATE adrenotools)
+        target_compile_definitions(${target} PRIVATE NFS_CUSTOM_DRIVERS)
+    endforeach()
+    target_link_options(hook_impl PRIVATE "-Wl,--exclude-libs,ALL")
+    foreach(target adrenotools main_hook file_redirect_hook gsl_alloc_hook hook_impl)
+        target_link_options(${target} PRIVATE "-Wl,-z,max-page-size=16384")
+    endforeach()
+    # adrenotools opens these from nativeLibraryDir at run time.
+    add_dependencies(nfsu2_android main_hook file_redirect_hook gsl_alloc_hook hook_impl)
+endif()

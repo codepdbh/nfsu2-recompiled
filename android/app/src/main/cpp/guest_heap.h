@@ -10,7 +10,16 @@ class GuestHeaps {
     struct Block { uint32_t capacity, requested; };
     struct Heap { uint32_t options, maximum; uint64_t live{}; std::map<uint32_t,Block> blocks; };
     GuestMemory& memory_;
-    std::map<uint32_t,uint32_t> free_{{0x10000000u,0x0f000000u},{0x30000000u,0x40000000u}};
+public:
+#if UINTPTR_MAX > 0xffffffffu
+    static constexpr uint32_t firstArena=0x10000000u,firstArenaEnd=0x1f000000u,secondArena=0x30000000u,secondArenaSize=0x40000000u;
+#else
+    // 32-bit host: two ~480 MB arenas around the 16 MB stack at 0x20000000,
+    // all inside GuestMemory's 1 GB.
+    static constexpr uint32_t firstArena=0x01000000u,firstArenaEnd=0x1f000000u,secondArena=0x22000000u,secondArenaSize=0x1e000000u;
+#endif
+private:
+    std::map<uint32_t,uint32_t> free_{{firstArena,firstArenaEnd-firstArena},{secondArena,secondArenaSize}};
     std::map<uint32_t,Heap> heaps_;
     uint32_t next_=0xf0000104u;
     void release(uint32_t address,uint32_t capacity) {

@@ -9,7 +9,8 @@ android {
         targetSdk 35
         versionCode 13
         versionName '0.13.0'
-        ndk { abiFilters 'arm64-v8a' }
+        // -PnfsAbi=armeabi-v7a builds the separate 32-bit APK.
+        ndk { abiFilters(project.findProperty('nfsAbi') ?: 'arm64-v8a') }
         externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
     }
     externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.30.5' } }

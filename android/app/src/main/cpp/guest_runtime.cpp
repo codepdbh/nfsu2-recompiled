@@ -610,7 +610,7 @@ extern "C" recomp_func_t recomp_lookup(uint32_t va) {
 extern "C" recomp_func_t recomp_lookup_manual(uint32_t va) {
     if(timerTestActive&&va==timerTestAddress)return timerTestCallback;
     if(generatedTestActive&&va==generatedTestTarget)return generatedTestCallback;
-    if(va>=0x10000000u&&va<0x1f000000u&&memory&&memory->readable(va,5)&&read32(va)==0x24748b56u&&*static_cast<const uint8_t*>(ptr(va+4,1))==8){
+    if(va>=GuestHeaps::firstArena&&va<GuestHeaps::firstArenaEnd&&memory&&memory->readable(va,5)&&read32(va)==0x24748b56u&&*static_cast<const uint8_t*>(ptr(va+4,1))==8){
         dynamicThunkAddress=va;return dynamicThunk;
     }
     return nfs_override_lookup(va);

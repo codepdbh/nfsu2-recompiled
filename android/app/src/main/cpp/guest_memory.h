@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 #include <stdexcept>
 #include <sys/mman.h>
@@ -7,16 +8,25 @@
 #include <map>
 #include <algorithm>
 
-// A full 32-bit virtual guest address space, independent of host pointer values.
+// The guest's virtual address space, independent of host pointer values.
 // Reserve only: committed regions are explicitly made accessible on demand.
+// A 64-bit host reserves the full 4 GB. A 32-bit host (armeabi-v7a) cannot:
+// the Java heap and ART's boot image sit inside any 2 GB window, so it reserves
+// 1 GB and GuestHeaps keeps every guest allocation below that.
 class GuestMemory {
+public:
+#if UINTPTR_MAX > 0xffffffffu
     static constexpr uint64_t size = uint64_t{1} << 32;
+#else
+    static constexpr uint64_t size = uint64_t{1} << 30;
+#endif
+private:
     void* base_ = MAP_FAILED;
     std::map<uint64_t,uint64_t> committed_;
     std::map<uint64_t,uint32_t> protection_;
     uint64_t page_=static_cast<uint64_t>(sysconf(_SC_PAGESIZE));
     bool accessible(uint32_t va,uint64_t bytes,bool write)const{
-        if(!bytes)return true;if(bytes>size-va)return false;
+        if(!bytes)return true;if(va>=size||bytes>size-va)return false;
         auto region=committed_.upper_bound(va);if(region==committed_.begin())return false;
         --region;if(uint64_t(va)+bytes>region->second)return false;
         for(uint64_t page=uint64_t(va)/page_*page_;page<uint64_t(va)+bytes;page+=page_){
@@ -26,13 +36,12 @@ class GuestMemory {
     }
 public:
     GuestMemory() {
-        static_assert(sizeof(void*) == 8, "GuestMemory requires a 64-bit host");
-        base_ = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        base_ = mmap(nullptr, size_t(size), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (base_ == MAP_FAILED) throw std::runtime_error("Guest address-space reservation failed");
     }
     GuestMemory(const GuestMemory&) = delete;
     GuestMemory& operator=(const GuestMemory&) = delete;
-    ~GuestMemory() { if (base_ != MAP_FAILED) munmap(base_, size); }
+    ~GuestMemory() { if (base_ != MAP_FAILED) munmap(base_, size_t(size)); }
     void* base() const { return base_; }
     bool readable(uint32_t va,uint64_t bytes)const{
         return accessible(va,bytes,false);
@@ -40,7 +49,7 @@ public:
     bool writable(uint32_t va,uint64_t bytes)const{return accessible(va,bytes,true);}
     // x86 execute permissions are guest metadata. ARM64 never executes these bytes.
     bool protect(uint32_t va,uint64_t bytes,uint32_t flags,uint32_t& previous){
-        if(!bytes||bytes>size-va)return false;
+        if(!bytes||va>=size||bytes>size-va)return false;
         if(flags!=1&&flags!=2&&flags!=4&&flags!=8&&flags!=0x10&&flags!=0x20&&flags!=0x40&&flags!=0x80)return false;
         uint64_t start=uint64_t(va)/page_*page_,end=(uint64_t(va)+bytes+page_-1)/page_*page_;
         auto region=committed_.upper_bound(start);if(region==committed_.begin())return false;
@@ -53,7 +62,7 @@ public:
         previous=first;return true;
     }
     void* address(uint32_t va, uint64_t bytes) const {
-        if (bytes > size - va) throw std::out_of_range("Guest range wraps 32-bit address space");
+        if (va >= size || bytes > size - va) throw std::out_of_range("Guest range outside the guest address space");
         return static_cast<unsigned char*>(base_) + va;
     }
     void commit(uint32_t va, uint64_t bytes) {
@@ -85,7 +94,7 @@ public:
 inline void testGuestMemory() {
     GuestMemory mem;
     // Exercise the game image range and addresses with the high guest bit set.
-    for (uint32_t va : {0x00400000u, 0x80000000u, 0xffff0000u}) {
+    for (uint32_t va : {0x00400000u, uint32_t(GuestMemory::size/2), uint32_t(GuestMemory::size-0x10000u)}) {
         mem.commit(va, 4);
         const uint32_t expected = va ^ 0x12345678u;
         std::memcpy(mem.address(va, 4), &expected, 4);
@@ -93,7 +102,7 @@ inline void testGuestMemory() {
         if (actual != expected) throw std::runtime_error("Guest memory round trip failed");
     }
     bool rejected = false;
-    try { mem.address(0xffffffffu, 2); } catch (const std::out_of_range&) { rejected = true; }
+    try { mem.address(uint32_t(GuestMemory::size-1), 2); } catch (const std::out_of_range&) { rejected = true; }
     if (!rejected) throw std::runtime_error("Guest wraparound was accepted");
-    if(mem.readable(0,1)||mem.readable(0x30000000,1)||!mem.readable(0x400000,4)||mem.readable(0xffffffff,2))throw std::runtime_error("Guest committed range validation failed");
+    if(mem.readable(0,1)||mem.readable(0x30000000,1)||!mem.readable(0x400000,4)||mem.readable(uint32_t(GuestMemory::size-1),2))throw std::runtime_error("Guest committed range validation failed");
 }
