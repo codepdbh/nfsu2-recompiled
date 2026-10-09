@@ -26,7 +26,7 @@ private:
     std::map<uint64_t,uint32_t> protection_;
     uint64_t page_=static_cast<uint64_t>(sysconf(_SC_PAGESIZE));
     bool accessible(uint32_t va,uint64_t bytes,bool write)const{
-        if(!bytes)return true;if(va>=size||bytes>size-va)return false;
+        if(!bytes)return true;if(uint64_t(va)>=size||bytes>size-va)return false;
         auto region=committed_.upper_bound(va);if(region==committed_.begin())return false;
         --region;if(uint64_t(va)+bytes>region->second)return false;
         for(uint64_t page=uint64_t(va)/page_*page_;page<uint64_t(va)+bytes;page+=page_){
@@ -49,7 +49,7 @@ public:
     bool writable(uint32_t va,uint64_t bytes)const{return accessible(va,bytes,true);}
     // x86 execute permissions are guest metadata. ARM64 never executes these bytes.
     bool protect(uint32_t va,uint64_t bytes,uint32_t flags,uint32_t& previous){
-        if(!bytes||va>=size||bytes>size-va)return false;
+        if(!bytes||uint64_t(va)>=size||bytes>size-va)return false;
         if(flags!=1&&flags!=2&&flags!=4&&flags!=8&&flags!=0x10&&flags!=0x20&&flags!=0x40&&flags!=0x80)return false;
         uint64_t start=uint64_t(va)/page_*page_,end=(uint64_t(va)+bytes+page_-1)/page_*page_;
         auto region=committed_.upper_bound(start);if(region==committed_.begin())return false;
@@ -62,7 +62,7 @@ public:
         previous=first;return true;
     }
     void* address(uint32_t va, uint64_t bytes) const {
-        if (va >= size || bytes > size - va) throw std::out_of_range("Guest range outside the guest address space");
+        if (uint64_t(va) >= size || bytes > size - va) throw std::out_of_range("Guest range outside the guest address space");
         return static_cast<unsigned char*>(base_) + va;
     }
     void commit(uint32_t va, uint64_t bytes) {
