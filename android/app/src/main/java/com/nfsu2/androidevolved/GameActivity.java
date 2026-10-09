@@ -88,6 +88,24 @@ public final class GameActivity extends NativeActivity {
                     updateTiltSensor();
                 }).setNegativeButton("Cancelar",null).show();
     }
+    private android.hardware.input.InputManager inputManager;
+    private final android.hardware.input.InputManager.InputDeviceListener gamepadListener=new android.hardware.input.InputManager.InputDeviceListener() {
+        @Override public void onInputDeviceAdded(int id) {updateGamepads();}
+        @Override public void onInputDeviceRemoved(int id) {updateGamepads();}
+        @Override public void onInputDeviceChanged(int id) {updateGamepads();}
+    };
+    /** Physical gamepads drive the game natively; the touch layer hides while one is connected. */
+    private void updateGamepads() {
+        boolean connected=false;
+        for(int id:android.view.InputDevice.getDeviceIds()) {
+            android.view.InputDevice device=android.view.InputDevice.getDevice(id);
+            if(device==null||device.isVirtual())continue;
+            int sources=device.getSources();
+            if((sources&android.view.InputDevice.SOURCE_GAMEPAD)==android.view.InputDevice.SOURCE_GAMEPAD||
+                    (sources&android.view.InputDevice.SOURCE_JOYSTICK)==android.view.InputDevice.SOURCE_JOYSTICK)connected=true;
+        }
+        if(touchControls!=null)touchControls.setGamepadConnected(connected);
+    }
     private final Runnable updateControlMode = new Runnable() {
         @Override public void run() {
             if(!foreground||touchControls==null)return;
@@ -99,14 +117,19 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeLanguage(String language);
     private static native void nativeResolution(int width, int height);
     private static native void nativeFrameLimit(int framesPerSecond);
+    private static native void nativeWidescreen(boolean enabled);
+    private static native void nativeMinimapTop(boolean top);
+    private static native void nativeBackBuffers(int count);
+    private static native void nativeCpuTextures(boolean enabled);
+    private static native void nativeGpuDriver(String hooks, String temp, String directory, String library);
     private void showFrameLimitOptions() {
-        final int[] limits={0,30,60,120};
-        int saved=getSharedPreferences("performance",MODE_PRIVATE).getInt("frameCap",0),selected=0;
-        for(int i=0;i<limits.length;i++)if(limits[i]==saved)selected=i;
-        new AlertDialog.Builder(this).setTitle("Límite de FPS")
-                .setSingleChoiceItems(new String[]{"Sin límite","30 FPS","60 FPS","120 FPS"},selected,(dialog,which)->{
-                    int cap=limits[which];getSharedPreferences("performance",MODE_PRIVATE).edit().putInt("frameCap",cap).apply();
-                    nativeFrameLimit(cap);dialog.dismiss();
+        GameOptions.Option option=GameOptions.find(GameOptions.FPS);
+        String saved=GameOptions.get(this,GameOptions.FPS);int selected=0;
+        for(int i=0;i<option.values.length;i++)if(option.values[i].equals(saved))selected=i;
+        new AlertDialog.Builder(this).setTitle(option.title)
+                .setSingleChoiceItems(option.labels,selected,(dialog,which)->{
+                    GameOptions.set(this,GameOptions.FPS,option.values[which]);
+                    nativeFrameLimit(Integer.parseInt(option.values[which]));dialog.dismiss();
                 }).setNegativeButton("Cancelar",null).show();
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -143,6 +166,7 @@ public final class GameActivity extends NativeActivity {
     }
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        inputManager=(android.hardware.input.InputManager)getSystemService(INPUT_SERVICE);
         tiltSensors=(android.hardware.SensorManager)getSystemService(SENSOR_SERVICE);
         tiltSensor=tiltSensors==null?null:tiltSensors.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
         android.content.SharedPreferences options=getSharedPreferences("touch_layouts_v1",MODE_PRIVATE);
@@ -156,13 +180,22 @@ public final class GameActivity extends NativeActivity {
                 refresh=Math.max(refresh,mode.getRefreshRate());
         android.view.WindowManager.LayoutParams windowParams=getWindow().getAttributes();
         windowParams.preferredRefreshRate=Math.min(120,refresh);getWindow().setAttributes(windowParams);
+        // Launcher options travel as extras; a direct start (adb, recents) falls back to the saved ones.
+        Intent launch = getIntent();
         DisplayMetrics metrics = new DisplayMetrics(); getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-        nativeResolution(getIntent().getIntExtra("renderWidth", Math.max(metrics.widthPixels, metrics.heightPixels)),
-                getIntent().getIntExtra("renderHeight", Math.min(metrics.widthPixels, metrics.heightPixels)));
-        String language = getIntent().getStringExtra("language");
-        if (language == null) language = getSharedPreferences("launcher", MODE_PRIVATE).getString("language", "Spanish");
-        nativeLanguage(language);
-        nativeFrameLimit(getSharedPreferences("performance",MODE_PRIVATE).getInt("frameCap",0));
+        int[] size = GameOptions.renderSize(this, Math.max(metrics.widthPixels, metrics.heightPixels),
+                Math.min(metrics.widthPixels, metrics.heightPixels));
+        nativeResolution(launch.getIntExtra("renderWidth", size[0]), launch.getIntExtra("renderHeight", size[1]));
+        String language = launch.getStringExtra("language");
+        nativeLanguage(language != null ? language : GameOptions.language(this));
+        nativeFrameLimit(launch.getIntExtra("frameCap", Integer.parseInt(GameOptions.get(this, GameOptions.FPS))));
+        nativeWidescreen(launch.getBooleanExtra("widescreen", GameOptions.get(this, GameOptions.WIDESCREEN).equals("on")));
+        nativeMinimapTop(launch.getBooleanExtra("minimapTop", GameOptions.get(this, GameOptions.MINIMAP).equals("top")));
+        nativeBackBuffers(launch.getIntExtra("backBuffers", Integer.parseInt(GameOptions.get(this, GameOptions.LATENCY))));
+        nativeCpuTextures(launch.getBooleanExtra("cpuTextures", GameOptions.get(this, GameOptions.TEXTURES).equals("cpu")));
+        String[] loader = launch.getStringArrayExtra("driverLoader");
+        if (loader == null || loader.length != 4) loader = GpuDrivers.loaderArguments(this);
+        nativeGpuDriver(loader[0], loader[1], loader[2], loader[3]);
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
         status.setBackgroundColor(0xb0000000);
@@ -219,6 +252,7 @@ public final class GameActivity extends NativeActivity {
     @Override protected void onPause() {
         foreground=false;
         updateTiltSensor();
+        if(inputManager!=null)inputManager.unregisterInputDeviceListener(gamepadListener);
         if (statusWindow != null) statusWindow.dismiss();
         if (touchControls != null) {touchControls.removeCallbacks(updateControlMode);touchControls.releaseAll();}
         if (controlsWindow != null) controlsWindow.dismiss();
@@ -228,6 +262,7 @@ public final class GameActivity extends NativeActivity {
         super.onResume();
         foreground=true;
         updateTiltSensor();
+        if(inputManager!=null){inputManager.registerInputDeviceListener(gamepadListener,null);updateGamepads();}
         if(touchControls!=null) {touchControls.removeCallbacks(updateControlMode);touchControls.post(updateControlMode);}
         boolean allowed = Build.VERSION.SDK_INT >= 30
                 ? Environment.isExternalStorageManager()

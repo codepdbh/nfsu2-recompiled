@@ -35,16 +35,28 @@ foreach(source IN LISTS GEN_SOURCES)
         list(APPEND ANDROID_GEN_SOURCES "${source}")
     endif()
 endforeach()
-set_property(GLOBAL PROPERTY JOB_POOLS guest_compile=6)
+set_property(GLOBAL PROPERTY JOB_POOLS guest_compile=4)
 add_library(nfs_guest OBJECT ${ANDROID_GEN_SOURCES})
 set_property(TARGET nfs_guest PROPERTY JOB_POOL_COMPILE guest_compile)
 target_include_directories(nfs_guest PRIVATE "${PCRECOMP}/runtime/recomp32" "${GEN_DIR}")
-target_compile_definitions(nfs_guest PRIVATE RECOMP_STRICT_ICALL)
+# RECOMP_LOCAL_REGS: guest registers live in locals of each lifted function
+# (written back at every call and return) so they stay in ARM64 registers.
+# RECOMP_MEM_QUAL=: guest memory accesses are not volatile; -fno-strict-aliasing
+# keeps the untyped guest memory correct, and lifted loops still make an opaque
+# call per back-edge. -fwrapv: x86 integer arithmetic wraps. Both validated by
+# scripts/difftest_real.py --cc clang-o2 --local-regs (same result as MSVC).
+target_compile_definitions(nfs_guest PRIVATE RECOMP_STRICT_ICALL RECOMP_LOCAL_REGS "RECOMP_MEM_QUAL=")
 # Optimize the ARM64 game while avoiding aliasing assumptions in x86 accesses;
 # retain unwind tables so unsupported HLE paths can exit to the host cleanly.
-target_compile_options(nfs_guest PRIVATE -O2 -w -fno-strict-aliasing -fexceptions -ffp-contract=off
+target_compile_options(nfs_guest PRIVATE -O2 -w -fwrapv -fno-strict-aliasing -fexceptions -ffp-contract=off
     -include "${CMAKE_CURRENT_SOURCE_DIR}/arm64_guest.h")
-add_library(nfsu2_android SHARED main.cpp guest_runtime.cpp d3d9_bridge.cpp "${NFS_ROOT}/src/runtime/overrides.c" $<TARGET_OBJECTS:nfs_guest>)
+# Custom Vulkan drivers (Turnip, ...) imported in the launcher, as in the MW/Carbon ports.
+# libadrenotools is pinned in third_party/ (BSD-2-Clause); no driver is bundled.
+add_subdirectory("${NFS_ROOT}/third_party/libadrenotools" "${CMAKE_CURRENT_BINARY_DIR}/adrenotools")
+add_library(nfsu2_diagnostics SHARED gpu_probe.cpp vulkan_driver.cpp)
+target_link_libraries(nfsu2_diagnostics PRIVATE adrenotools android log dl)
+target_compile_options(nfsu2_diagnostics PRIVATE -O2 -Wall -Wextra -Werror -Wno-missing-field-initializers)
+add_library(nfsu2_android SHARED main.cpp guest_runtime.cpp d3d9_bridge.cpp vulkan_driver.cpp "${NFS_ROOT}/src/runtime/overrides.c" "${NFS_ROOT}/src/runtime/widescreen.c" $<TARGET_OBJECTS:nfs_guest>)
 target_include_directories(nfsu2_android SYSTEM PRIVATE "${DXVK_SOURCE}/include/native"
   "${DXVK_SOURCE}/include/native/windows" "${DXVK_SOURCE}/include/native/directx")
 target_include_directories(nfsu2_android PRIVATE "${PCRECOMP}/runtime/recomp32" "${PCRECOMP}/runtime/win32hle" "${NFS_ROOT}/src/runtime")
@@ -53,4 +65,17 @@ target_compile_features(nfsu2_android PRIVATE cxx_std_17)
 target_compile_definitions(nfsu2_android PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_compile_options(nfsu2_android PRIVATE -O2 -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)
 target_link_options(nfsu2_android PRIVATE "-uANativeActivity_onCreate")
-target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio)
+target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio adrenotools dl)
+# linkernsbypass has data symbols named like libdl's functions; exporting them breaks
+# the system loader when it opens the vendor namespace (MW port note).
+# Only adrenotools' archives: excluding ALL would also hide native_app_glue's
+# ANativeActivity_onCreate, which NativeActivity looks up by name.
+foreach(target nfsu2_android nfsu2_diagnostics)
+    target_link_options(${target} PRIVATE "-Wl,--exclude-libs,libadrenotools.a:liblinkernsbypass.a" "-Wl,-z,max-page-size=16384")
+endforeach()
+target_link_options(hook_impl PRIVATE "-Wl,--exclude-libs,ALL")
+foreach(target adrenotools main_hook file_redirect_hook gsl_alloc_hook hook_impl)
+    target_link_options(${target} PRIVATE "-Wl,-z,max-page-size=16384")
+endforeach()
+# adrenotools opens these from nativeLibraryDir at run time.
+add_dependencies(nfsu2_android main_hook file_redirect_hook gsl_alloc_hook hook_impl)
