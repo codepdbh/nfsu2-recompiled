@@ -23,6 +23,7 @@
 #include "native32.h"
 #include "nfs_log.h"
 #include "nfs_runtime.h"
+#include "nfs_widescreen.h"
 
 static const char *k_d3d9[17] = {
     "QueryInterface", "AddRef", "Release", "RegisterSoftwareDevice", "GetAdapterCount",
@@ -270,10 +271,12 @@ static void patch_slot(uint32_t *slot, void *fn, void **orig) {
     VirtualProtect(slot, 4, old, &old);
 }
 static HRESULT __stdcall hk_reset(void *dev, void *pp) {
+    if (pp) nfs_widescreen_set_resolution(((uint32_t *)pp)[0], ((uint32_t *)pp)[1]);
     if (g_nfs_windowed && pp) make_windowed((uint32_t *)pp, 0);
     return g_orig_reset(dev, pp);
 }
 static HRESULT __stdcall hk_create(void *d3d, UINT ad, UINT type, HWND focus, DWORD flags, void *pp, void **out) {
+    if (pp) nfs_widescreen_set_resolution(((uint32_t *)pp)[0], ((uint32_t *)pp)[1]);
     if (g_nfs_windowed && pp) make_windowed((uint32_t *)pp, (uint32_t)(uintptr_t)focus);
     HRESULT hr = g_orig_create(d3d, ad, type, focus, flags, pp, out);
     if (hr == 0 && out && *out)

@@ -20,6 +20,7 @@
 #include "recomp_trace.h"
 #include "native32.h"
 #include "nfs_runtime.h"
+#include "nfs_widescreen.h"
 #include "nfs_log.h"
 
 char g_nfs_game_root[MAX_PATH];
@@ -191,6 +192,8 @@ int main(int argc, char **argv) {
     }
     SetCurrentDirectoryA(g_nfs_game_root);
     NFS_LOG(BOOT, "GAME_ROOT = %s", g_nfs_game_root);
+    nfs_widescreen_init(g_nfs_game_root);
+    NFS_LOG(BOOT, "widescreen: %d HUD offsets from scripts/NFSUnderground2.WidescreenFix.dat", nfs_widescreen_hud_entries());
 
     /* 3. Machine, image, imports */
     native32_init();
