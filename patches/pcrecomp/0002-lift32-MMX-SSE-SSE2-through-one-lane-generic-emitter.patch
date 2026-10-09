@@ -1,7 +1,7 @@
 From 348f6e4d01062e4072dcbfb99a41f6580634abc7 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Tue, 6 Oct 2026 12:39:39 -0400
-Subject: [PATCH 02/11] lift32: MMX/SSE/SSE2 through one lane-generic emitter
+Subject: [PATCH 02/13] lift32: MMX/SSE/SSE2 through one lane-generic emitter
  (simd32.py); unimplemented instructions fail loudly
 
 lift32 had no SSE: movss lifted to a comment and every other xmm

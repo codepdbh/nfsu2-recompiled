@@ -1,7 +1,7 @@
 From 0764edd7c9c6727e3e4c480711cea2187974e4f0 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Tue, 6 Oct 2026 12:22:10 -0400
-Subject: [PATCH 01/11] pe_analyze: a code range is the adjacent code sections
+Subject: [PATCH 01/13] pe_analyze: a code range is the adjacent code sections
  holding the entry point
 
 A dumped executable can end with a small executable section (a rebuilt

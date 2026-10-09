@@ -1,7 +1,7 @@
 From abc3ca255f9c58305c6df8ac6234b48490faef70 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Wed, 7 Oct 2026 15:22:02 -0400
-Subject: [PATCH 09/11] recomp_types: explicit sign tests for signed conditions
+Subject: [PATCH 09/13] recomp_types: explicit sign tests for signed conditions
  (MSVC /O1 miscompile)
 
 The lazy-flag conditions captured narrow operands left-aligned

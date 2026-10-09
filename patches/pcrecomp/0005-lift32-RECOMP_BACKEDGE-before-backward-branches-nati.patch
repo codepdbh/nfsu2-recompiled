@@ -1,7 +1,7 @@
 From d544dafb52b4076a6450b36b85fd10af28e7fced Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Tue, 6 Oct 2026 15:50:39 -0400
-Subject: [PATCH 05/11] lift32: RECOMP_BACKEDGE before backward branches;
+Subject: [PATCH 05/13] lift32: RECOMP_BACKEDGE before backward branches;
  native32: ring of recent native calls, thread id in trace
 
 lift_function never emitted RECOMP_BACKEDGE (only generate.py did), so

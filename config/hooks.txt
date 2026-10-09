@@ -1,0 +1,33 @@
+# Instructions where the host gets control first (RECOMP_HOOK -> recomp_hook in
+# src/runtime/widescreen.c). Each replaces one patch of the NFSU2 WidescreenFix
+# (ThirteenAG), found by that mod's byte patterns; every site is inside a block,
+# never a branch target (checked against work/catalog.json).
+# VA        purpose
+0x0051B3CF  HUD anchor X after mov [esp+A0h], 320.0
+0x005368CC  HUD anchor X after mov [esp+74h], 320.0
+0x00536A9D  HUD anchor X after mov [esp+84h], 320.0
+0x00536CCD  HUD anchor X after mov [esp+94h], 320.0
+0x00537015  HUD anchor X after mov [esp+74h], 320.0
+0x0050B4F9  HUD anchor X after mov [esp+1A0h], 320.0
+0x0048B644  HUD anchor X after mov [0082D2D8h], 320.0
+0x005CC0FD  rear-view mirror right X1 (440.0)
+0x005CC10D  rear-view mirror left X1 (200.0)
+0x005CC11D  rear-view mirror left X2 (200.0)
+0x005CC12D  rear-view mirror right X2 (440.0)
+0x005CBEF9  cutscene border width (640.0)
+0x005CBF09  cutscene border width (640.0)
+0x005CBE8D  cutscene border width (640.0)
+0x005CBEA5  cutscene border width (640.0)
+0x005C726E  radar mask width (640.0)
+0x005C727E  radar mask width (640.0)
+0x005C7286  radar mask height (480.0)
+0x005C7296  radar mask height (480.0)
+0x0051B198  HUD element position (HudHook)
+0x0051D655  radar blip position (BlipsHook)
+0x004C6759  HUD element position (HudHook2)
+0x0050516F  stop sign position (StopSignHook)
+0x00536A32  FMV quad extents (FMVWidescreenMode 1)
+0x005C7F64  3D view scale per view id (FixFOV)
+0x005C7FEE  FixFOV constant 1 (fdivr 1.0)
+0x005C8000  FixFOV constant 2 (fmul 0.5)
+0x005C8025  FixFOV constant 3 (fdivr 1.0)

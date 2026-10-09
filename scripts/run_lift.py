@@ -103,9 +103,11 @@ def cmd_lift(exe, catalog, outdir, split=400, names_path=None):
     cfg = os.path.join(HERE, "..", "config")
     overrides = read_va_list(os.path.join(cfg, "overrides.txt"))
     excluded = read_va_list(os.path.join(cfg, "exclude.txt"))
+    hooks = read_va_list(os.path.join(cfg, "hooks.txt"))
     md = Cs(CS_ARCH_X86, CS_MODE_32)
     md.detail = True
-    lifter = Lifter(iat_map=iat, func_names={}, lifted=lifted, precise_carry=True)
+    lifter = Lifter(iat_map=iat, func_names={}, lifted=lifted, precise_carry=True,
+                    hook_sites=set(hooks))
     os.makedirs(outdir, exist_ok=True)
     for fn in os.listdir(outdir):
         if fn.startswith("recomp_") and fn.endswith((".c", ".h")):

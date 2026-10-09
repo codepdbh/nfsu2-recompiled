@@ -1,7 +1,7 @@
 From 56297b6c68f0e9a90dcedfc585106e7a8bc78579 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Wed, 7 Oct 2026 11:40:57 -0400
-Subject: [PATCH 08/11] lift32: fnstsw/fnstenv report x87 TOP; native32: fair
+Subject: [PATCH 08/13] lift32: fnstsw/fnstenv report x87 TOP; native32: fair
  FIFO machine lock, hashed name lookup
 
 - TOP (status word bits 11-13) was missing; found by differential testing

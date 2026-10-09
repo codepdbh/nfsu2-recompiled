@@ -1,7 +1,7 @@
 From 3fb2ae35fa6ed3f1deb89e6d586617fdcf2f3163 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Tue, 6 Oct 2026 15:10:27 -0400
-Subject: [PATCH 04/11] lift32: lahf from the lazy flag state; fnstenv/fldenv
+Subject: [PATCH 04/13] lift32: lahf from the lazy flag state; fnstenv/fldenv
  (CW, SW condition bits, empty tags)
 
 lahf was unimplemented; NFSU2's CPU probe at 0x6F5FC5 uses it. The

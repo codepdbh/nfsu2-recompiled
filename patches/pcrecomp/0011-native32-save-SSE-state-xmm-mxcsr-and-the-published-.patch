@@ -1,7 +1,7 @@
 From 8ad7463cdaaff983f1a9d42402c587796a16c095 Mon Sep 17 00:00:00 2001
 From: sistemas3cecasem <paukarvv@gmail.com>
 Date: Wed, 7 Oct 2026 15:24:15 -0400
-Subject: [PATCH 11/11] native32: save SSE state (xmm, mxcsr) and the published
+Subject: [PATCH 11/13] native32: save SSE state (xmm, mxcsr) and the published
  flags per guest thread
 
 regs_t carried the integer, x87 and MMX registers only. A guest thread
