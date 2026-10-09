@@ -85,7 +85,6 @@ std::string probe(const char* hooks, const char* temp, const char* directory, co
     require(features.depthClamp, "depthClamp");
     require(features.depthBiasClamp, "depthBiasClamp");
     require(features.fillModeNonSolid, "fillModeNonSolid");
-    require(features.multiViewport, "multiViewport");
     require(features.occlusionQueryPrecise, "occlusionQueryPrecise");
     require(features.shaderClipDistance, "shaderClipDistance");
     require(features.shaderCullDistance, "shaderCullDistance");
