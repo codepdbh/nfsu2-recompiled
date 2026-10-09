@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="true" />
-    <application android:label="NFSU2 Android Evolved" android:icon="@drawable/icono" android:allowBackup="false">
+    <application android:label="NFSU2 Android Evolved" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="false">
         <activity android:name=".GameActivity" android:exported="true" android:process=":game"
             android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="landscape">
             <meta-data android:name="android.app.lib_name" android:value="nfsu2_android" />
