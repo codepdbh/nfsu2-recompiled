@@ -31,3 +31,4 @@
 0x005C7FEE  FixFOV constant 1 (fdivr 1.0)
 0x005C8000  FixFOV constant 2 (fmul 0.5)
 0x005C8025  FixFOV constant 3 (fdivr 1.0)
+0x005D2C12  particle frame time pushed as 1/60 (FPSLimit; push 0x3C888889)

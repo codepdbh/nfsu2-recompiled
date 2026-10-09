@@ -50,6 +50,16 @@ target_compile_definitions(nfs_guest PRIVATE RECOMP_STRICT_ICALL RECOMP_LOCAL_RE
 # retain unwind tables so unsupported HLE paths can exit to the host cleanly.
 target_compile_options(nfs_guest PRIVATE -O2 -w -fwrapv -fno-strict-aliasing -fexceptions -ffp-contract=off
     -include "${CMAKE_CURRENT_SOURCE_DIR}/arm64_guest.h")
+# The ~27,700 lifted functions are internal to the library: hidden visibility
+# turns their cross-file calls from PLT stubs into direct calls, and ThinLTO
+# (as in the MW port) can inline small game functions across the generated
+# files, which also removes their guest register save/reload. No debug info:
+# it only slows the build of 9M generated lines.
+option(NFS_GUEST_LTO "ThinLTO over the lifted game code" ON)
+target_compile_options(nfs_guest PRIVATE -g0 -fvisibility=hidden)
+if(NFS_GUEST_LTO)
+    target_compile_options(nfs_guest PRIVATE -flto=thin)
+endif()
 # Custom Vulkan drivers (Turnip, ...) imported in the launcher, as in the MW/Carbon ports.
 # libadrenotools is pinned in third_party/ (BSD-2-Clause); no driver is bundled.
 add_subdirectory("${NFS_ROOT}/third_party/libadrenotools" "${CMAKE_CURRENT_BINARY_DIR}/adrenotools")
@@ -66,6 +76,10 @@ target_compile_definitions(nfsu2_android PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_compile_options(nfsu2_android PRIVATE -O2 -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)
 target_link_options(nfsu2_android PRIVATE "-uANativeActivity_onCreate")
 target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio adrenotools dl)
+if(NFS_GUEST_LTO)
+    target_link_options(nfsu2_android PRIVATE -flto=thin "-Wl,--thinlto-jobs=4"
+        "-Wl,--thinlto-cache-dir=${CMAKE_BINARY_DIR}/thinlto-cache")
+endif()
 # linkernsbypass has data symbols named like libdl's functions; exporting them breaks
 # the system loader when it opens the vendor namespace (MW port note).
 # Only adrenotools' archives: excluding ALL would also hide native_app_glue's

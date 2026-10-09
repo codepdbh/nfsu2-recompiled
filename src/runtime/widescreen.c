@@ -33,6 +33,8 @@ static const int s_disable_cutscene_borders = 1;
 /* Extra vertical move of the minimap (mobile layout: top-left instead of
  * bottom-left, clear of the thumbs). 0 keeps the mod's position. */
 static float s_minimap_dy = 0.0f;
+/* Game frame time for FPSLimit (0 = the game's own 1/60 s). */
+static float s_frame_time = 0.0f;
 /* FOV multipliers chosen per view at 0x5C7F64 and applied at its three
  * reads of the 1.0/0.5/1.0 constants (the mod repoints those operands). */
 static double s_fov_scale[3] = {1.0, 1.0, 1.0};
@@ -114,7 +116,6 @@ void nfs_widescreen_set_minimap_offset(float dy) { s_minimap_dy = dy; }
  * the loop at 0x57EB0A waits for it; the video-mode, smokeable and step
  * constants carry the same 1/60. They are data, so the lifted code reads
  * whatever is written here. */
-static float s_frame_time = 0.0f;
 
 void nfs_widescreen_set_frame_rate(unsigned fps) {
     s_frame_time = fps >= 30 ? 1.0f / (float)fps : 0.0f;
@@ -133,7 +134,7 @@ void nfs_widescreen_apply_frame_rate(void) {
 static void set_esp_float(uint32_t offset, float value) { wrf(g_esp + offset, value); }
 
 void recomp_hook(uint32_t va) {
-    if (!s_enabled) return;
+    if (!s_enabled && va != 0x005D2C12u) return;
     switch (va) {
     /* HUD anchors: `mov [esp+N], 320.0` -> fHudPosX (pattern offsets 4/7). */
     case 0x0051B3CFu: set_esp_float(0xA0, s_hud_pos_x); break;
@@ -195,6 +196,8 @@ void recomp_hook(uint32_t va) {
     case 0x005C7FEEu: g_st[0] *= s_fov_scale[0] / rdf(0x00784250u); break;
     case 0x005C8000u: g_st[0] *= s_fov_scale[1] / rdf(0x00784260u); break;
     case 0x005C8025u: g_st[0] *= s_fov_scale[2] / rdf(0x00784250u); break;
+    /* FPSLimit: eDisplayFrame pushes 1/60 s as the particle step. */
+    case 0x005D2C12u: if (s_frame_time > 0.0f) set_esp_float(0x0, s_frame_time); break;
     default: break;
     }
 }
