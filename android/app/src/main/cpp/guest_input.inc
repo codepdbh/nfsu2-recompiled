@@ -20,7 +20,58 @@ struct InputObject {
     std::vector<InputFormatObject> format;
     uint64_t sequence=0;bool overflow=false;
     std::deque<InputBufferedEvent> pending;
+    // Joystick (kind 4): per-axis range/dead zone/saturation and the values last
+    // reported per format item, for buffered data.
+    std::array<int32_t,6> rangeMin{{0,0,0,0,0,0}},rangeMax{{65535,65535,65535,65535,65535,65535}};
+    std::array<uint32_t,6> deadZone{},saturation{{10000,10000,10000,10000,10000,10000}};
+    std::vector<uint32_t> lastValues;
 };
+// The Android gamepad as a DirectInput joystick (kind 4), laid out like an Xbox
+// pad under DirectInput: X/Y left stick, Z triggers (LT up, RT down), Rx/Ry right
+// stick, Rz centred; buttons A B X Y LB RB Back Start LS RS; one POV hat.
+struct InputPad {float axis[6]{};uint32_t buttons=0;int hatX=0,hatY=0;};
+InputPad inputPad;bool inputPadConnected=false;
+std::atomic<int> inputPadAcquired{0};
+std::array<uint8_t,16> directInputGuid(uint32_t data1){
+    std::array<uint8_t,16> guid={0,0,0,0,0xf3,0xc9,0xcf,0x11,0xbf,0xc7,0x44,0x45,0x53,0x54,0,0};
+    std::memcpy(guid.data(),&data1,4);return guid;
+}
+const std::array<uint8_t,16> padGuid={0x20,0x50,0x41,0x44,0x00,0x00,0x00,0x00,0x00,0x00,0x41,0x4e,0x44,0x52,0x4f,0x49};
+// guidProduct of a HID device: PID<<16|VID, then "PIDVID".
+const std::array<uint8_t,16> padProductGuid={0x5e,0x04,0x8e,0x02,0,0,0,0,0,0,0x50,0x49,0x44,0x56,0x49,0x44};
+struct PadObject {uint32_t guidData1,offset,type,flags;const char* name;};
+// Offsets are those of c_dfDIJoystick / DIJOYSTATE.
+const PadObject padObjects[]={
+    {0xa36d02e0u,0,0x0002u|(0u<<8),0x100u,"X Axis"},{0xa36d02e1u,4,0x0002u|(1u<<8),0x100u,"Y Axis"},
+    {0xa36d02e2u,8,0x0002u|(2u<<8),0x100u,"Z Axis"},{0xa36d02f4u,12,0x0002u|(3u<<8),0x100u,"X Rotation"},
+    {0xa36d02f5u,16,0x0002u|(4u<<8),0x100u,"Y Rotation"},{0xa36d02e3u,20,0x0002u|(5u<<8),0x100u,"Z Rotation"},
+    {0xa36d02f2u,32,0x0010u|(0u<<8),0,"Hat Switch"},
+    {0xa36d02f0u,48,0x0004u|(0u<<8),0,"Button 0"},{0xa36d02f0u,49,0x0004u|(1u<<8),0,"Button 1"},
+    {0xa36d02f0u,50,0x0004u|(2u<<8),0,"Button 2"},{0xa36d02f0u,51,0x0004u|(3u<<8),0,"Button 3"},
+    {0xa36d02f0u,52,0x0004u|(4u<<8),0,"Button 4"},{0xa36d02f0u,53,0x0004u|(5u<<8),0,"Button 5"},
+    {0xa36d02f0u,54,0x0004u|(6u<<8),0,"Button 6"},{0xa36d02f0u,55,0x0004u|(7u<<8),0,"Button 7"},
+    {0xa36d02f0u,56,0x0004u|(8u<<8),0,"Button 8"},{0xa36d02f0u,57,0x0004u|(9u<<8),0,"Button 9"},
+};
+// The value DirectInput would report for a resolved format item (type: class
+// in the low byte, our object index in bits 8..23, 0xffff = not on this pad).
+uint32_t padItemValue(const InputObject& object,const InputFormatObject& item){
+    uint32_t index=(item.type>>8)&0xffff,category=item.type&0xff;
+    if(category&3){
+        if(index>5)return 0;
+        float v=inputPad.axis[index];
+        float dz=object.deadZone[index]/10000.f,sat=std::max(object.saturation[index]/10000.f,dz+0.01f);
+        float magnitude=std::fabs(v);magnitude=magnitude<=dz?0.f:std::min(1.f,(magnitude-dz)/(sat-dz));
+        v=v<0?-magnitude:magnitude;
+        double lo=object.rangeMin[index],hi=object.rangeMax[index];
+        return static_cast<uint32_t>(static_cast<int32_t>(std::lround(lo+(v+1.0)*0.5*(hi-lo))));
+    }
+    if(category&0x10){
+        if(index||(!inputPad.hatX&&!inputPad.hatY))return 0xffffffffu;
+        static const uint32_t angles[3][3]={{31500,0,4500},{27000,0xffffffffu,9000},{22500,18000,13500}};
+        return angles[inputPad.hatY+1][inputPad.hatX+1];
+    }
+    return index<10&&(inputPad.buttons>>index&1)?0x80u:0u;
+}
 std::map<uint32_t,InputObject> inputObjects;
 std::map<uint32_t,uint32_t> inputMethodCalls;
 uint32_t inputToken{};
@@ -36,6 +87,15 @@ uint32_t createInputObject(uint32_t kind){
 }
 void inputDeviceInstance(uint32_t address,uint32_t kind,uint32_t bytes){
     std::memset(ptr(address,bytes),0,bytes);write32(address,bytes);
+    if(kind==4){
+        std::memcpy(ptr(address+4,16),padGuid.data(),16);std::memcpy(ptr(address+20,16),padProductGuid.data(),16);
+        write32(address+36,0x10215);  // DI8DEVTYPE_GAMEPAD, standard subtype, HID
+        const char* name="Android Gamepad";
+        std::memcpy(ptr(address+40,std::strlen(name)+1),name,std::strlen(name)+1);
+        std::memcpy(ptr(address+300,std::strlen(name)+1),name,std::strlen(name)+1);
+        if(bytes>=580){*static_cast<uint16_t*>(ptr(address+576,2))=1;*static_cast<uint16_t*>(ptr(address+578,2))=5;}
+        return;
+    }
     auto& guid=kind==2?keyboardGuid:mouseGuid;
     std::memcpy(ptr(address+4,16),guid.data(),16);std::memcpy(ptr(address+20,16),guid.data(),16);
     write32(address+36,kind==2?0x413:0x212);
@@ -68,6 +128,132 @@ unsigned buildKeyboardActions(uint32_t format){
 void releaseInputObject(uint32_t address){auto found=inputObjects.find(address);if(found==inputObjects.end())return;
     if(--found->second.references)return;heaps->free(GuestHeaps::process,found->second.table);heaps->free(GuestHeaps::process,address);inputObjects.erase(found);
 }
+// IDirectInputDevice8 methods whose joystick behaviour differs from the
+// keyboard/mouse path. Returns false for the shared ones (Acquire, cooperative
+// level, device info, ...).
+bool joystickMethod(InputObject& object,uint32_t self,uint32_t method){
+    (void)self;
+    auto objectFor=[&](uint32_t how,uint32_t id)->int{
+        for(unsigned i=0;i<std::size(padObjects);++i){
+            if(how==1){  // DIPH_BYOFFSET: offset in the installed data format
+                for(auto& item:object.format)if(item.offset==id&&((item.type>>8)&0xffff)==((padObjects[i].type>>8)&0xffff)&&
+                    ((item.type&padObjects[i].type&0x1f)))return int(i);
+            }else if(how==2&&((id&0xffff1f)==(padObjects[i].type&0xffff1f)))return int(i);
+        }return -1;};
+    auto fillObject=[&](uint32_t output,const PadObject& entry){
+        uint32_t bytes=read32(output);std::memset(ptr(output+4,bytes-4),0,bytes-4);
+        auto guid=directInputGuid(entry.guidData1);std::memcpy(ptr(output+4,16),guid.data(),16);
+        write32(output+20,entry.offset);write32(output+24,entry.type);write32(output+28,entry.flags);
+        std::memcpy(ptr(output+32,std::strlen(entry.name)+1),entry.name,std::strlen(entry.name)+1);
+    };
+    switch(method){
+    case 3:{uint32_t output=arg(1);if(!output||read32(output)!=44){ret(diInvalid,2);return true;}
+        std::memset(ptr(output+4,40),0,40);write32(output+4,1);write32(output+8,0x10215);
+        write32(output+12,6);write32(output+16,10);write32(output+20,1);ret(0,2);return true;}
+    case 4:{uint32_t callback=arg(1),context=arg(2),flags=arg(3);if(!callback){ret(diInvalid,4);return true;}
+        uint32_t instance=allocate(316);
+        try{for(auto& entry:padObjects){
+            uint32_t category=flags&0x1f;
+            if(category&&!(entry.type&category))continue;
+            write32(instance,316);fillObject(instance,entry);
+            if(!callGuest(callback,{instance,context}))break;
+        }}catch(...){heaps->free(GuestHeaps::process,instance);throw;}
+        heaps->free(GuestHeaps::process,instance);ret(0,4);return true;}
+    case 5:case 6:{uint32_t property=arg(1),header=arg(2);
+        if(!header||read32(header+4)!=16){ret(diInvalid,3);return true;}
+        uint32_t size=read32(header),objectId=read32(header+8),how=read32(header+12);
+        if(property==1){  // DIPROP_BUFFERSIZE
+            if(size!=20||how){ret(diInvalid,3);return true;}
+            if(method==6){if(object.acquired){ret(0x800700aa,3);return true;}if(read32(header+16)>4096){ret(diInvalid,3);return true;}object.bufferSize=read32(header+16);}
+            else write32(header+16,object.bufferSize);ret(0,3);return true;}
+        if(property==2){if(size!=20){ret(diInvalid,3);return true;}if(method==5)write32(header+16,0);ret(method==6&&read32(header+16)?0x80004001:0,3);return true;}
+        if(property==9){if(size!=20){ret(diInvalid,3);return true;}if(method==5)write32(header+16,0);ret(0,3);return true;}
+        if(property!=4&&property!=5&&property!=6){ret(0x80004001,3);return true;}
+        if(size!=(property==4?24u:20u)){ret(diInvalid,3);return true;}
+        std::vector<unsigned> axes;
+        if(how==0)axes={0,1,2,3,4,5};
+        else{int found=objectFor(how,objectId);if(found<0||found>5){ret(0x80070002,3);return true;}axes={unsigned(found)};}
+        std::lock_guard<std::mutex> lock(inputMutex);
+        if(method==6){
+            if(property==4){int32_t lo=static_cast<int32_t>(read32(header+16)),hi=static_cast<int32_t>(read32(header+20));if(lo>=hi){ret(diInvalid,3);return true;}
+                for(auto a:axes){object.rangeMin[a]=lo;object.rangeMax[a]=hi;}}
+            else{uint32_t value=read32(header+16);if(value>10000){ret(diInvalid,3);return true;}for(auto a:axes)(property==5?object.deadZone:object.saturation)[a]=value;}
+            if(object.acquired){object.lastValues.clear();for(auto& item:object.format)object.lastValues.push_back(padItemValue(object,item));}
+        }else{
+            if(how==0&&property==4){ret(diInvalid,3);return true;}
+            unsigned a=axes.front();
+            if(property==4){write32(header+16,static_cast<uint32_t>(object.rangeMin[a]));write32(header+20,static_cast<uint32_t>(object.rangeMax[a]));}
+            else write32(header+16,(property==5?object.deadZone:object.saturation)[a]);
+        }
+        ret(0,3);return true;}
+    case 9:{if(!object.acquired){ret(diNotAcquired,3);return true;}
+        if(arg(1)!=object.size||!arg(2)){ret(diInvalid,3);return true;}
+        std::lock_guard<std::mutex> lock(inputMutex);std::memset(ptr(arg(2),object.size),0,object.size);
+        for(auto& item:object.format){uint32_t value=padItemValue(object,item);
+            if(item.bytes==4)write32(arg(2)+item.offset,value);else *static_cast<uint8_t*>(ptr(arg(2)+item.offset,1))=uint8_t(value);}
+        ret(0,3);return true;}
+    case 10:{uint32_t bytes=arg(1),out=arg(2),count=arg(3),flags=arg(4);
+        if(!object.bufferSize){ret(0x80040207,5);return true;}if(!object.acquired){ret(diNotAcquired,5);return true;}
+        if((bytes!=16&&bytes!=20)||!count||!memory->writable(count,4)||(flags&~1u)){ret(diInvalid,5);return true;}
+        std::lock_guard<std::mutex> lock(inputMutex);
+        uint32_t time=uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        if(object.lastValues.size()!=object.format.size())object.lastValues.assign(object.format.size(),0);
+        for(size_t i=0;i<object.format.size();++i){uint32_t value=padItemValue(object,object.format[i]);
+            if(value==object.lastValues[i])continue;object.lastValues[i]=value;
+            if(object.pending.size()>=object.bufferSize){object.pending.pop_front();object.overflow=true;}
+            object.pending.push_back({object.format[i].offset,value,time,uint32_t(++inputSequence),object.format[i].user});}
+        uint32_t amount=uint32_t(std::min<uint64_t>(read32(count),object.pending.size()));
+        if(out&&!memory->writable(out,uint64_t(amount)*bytes)){ret(diInvalid,5);return true;}
+        if(out)for(uint32_t i=0;i<amount;++i)std::memcpy(ptr(out+i*bytes,bytes),&object.pending[i],bytes);
+        uint32_t status=object.overflow?1:0;write32(count,amount);
+        if(!(flags&1)){for(uint32_t i=0;i<amount;++i)object.pending.pop_front();object.overflow=false;}
+        ret(status,5);return true;}
+    case 11:{uint32_t format=arg(1);if(object.acquired){ret(0x800700aa,2);return true;}
+        if(!format||read32(format)!=24||read32(format+4)!=16){ret(diInvalid,2);return true;}
+        uint32_t size=read32(format+12),count=read32(format+16),array=read32(format+20);
+        if(!size||size>4096||count>256||(count&&!array)){ret(diInvalid,2);return true;}
+        std::vector<InputFormatObject> items;std::array<bool,6> axisUsed{};std::array<bool,10> buttonUsed{};bool povUsed=false;
+        for(uint32_t i=0;i<count;++i){
+            uint32_t guidAddress=read32(array+i*16),offset=read32(array+i*16+4),type=read32(array+i*16+8);
+            uint32_t category=type&0x1f,instance=(type>>8)&0xffff,index=0xffff;
+            uint32_t data1=guidAddress&&memory->readable(guidAddress,16)?read32(guidAddress):0;
+            uint32_t bytes=(category&3)||(category&0x10)?4:1;
+            if(category&3){
+                static const uint32_t axisGuids[6]={0xa36d02e0u,0xa36d02e1u,0xa36d02e2u,0xa36d02f4u,0xa36d02f5u,0xa36d02e3u};
+                if(instance!=0xffff){if(instance<6)index=instance;}
+                else if(data1){for(uint32_t a=0;a<6;++a)if(axisGuids[a]==data1&&!axisUsed[a]){index=a;break;}}
+                else for(uint32_t a=0;a<6;++a)if(!axisUsed[a]){index=a;break;}
+                if(index<6)axisUsed[index]=true;
+            }else if(category&0x10){
+                if((instance==0xffff||instance==0)&&!povUsed){index=0;povUsed=true;}
+            }else if(category&12){
+                if(instance!=0xffff){if(instance<10)index=instance;}
+                else for(uint32_t b=0;b<10;++b)if(!buttonUsed[b]){index=b;break;}
+                if(index<10)buttonUsed[index]=true;
+            }else{ret(diInvalid,2);return true;}
+            if(offset>size||bytes>size-offset){ret(diInvalid,2);return true;}
+            // A required object this pad lacks fails like DirectInput does.
+            if(index==0xffff&&!(type&0x80000000u)){ret(diInvalid,2);return true;}
+            items.push_back({offset,(category&3?2u:category&0x10?0x10u:4u)|(index<<8),bytes});
+        }
+        object.size=size;object.format=std::move(items);
+        NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Gamepad data format: %u bytes, %zu objects",size,object.format.size());
+        ret(0,2);return true;}
+    case 14:{uint32_t output=arg(1),objectId=arg(2),how=arg(3);
+        if(!output||(read32(output)!=316&&read32(output)!=280)){ret(diInvalid,4);return true;}
+        int found=objectFor(how,objectId);if(found<0){ret(0x80070002,4);return true;}
+        fillObject(output,padObjects[found]);ret(0,4);return true;}
+    case 19:ret(0,4);return true;   // EnumEffects: no force feedback
+    case 25:ret(object.acquired?0:diNotAcquired,1);return true;
+    case 29:ret(0x80004001,4);return true;
+    case 30:ret(0x80004001,4);return true;
+    case 16:case 17:case 18:case 20:case 21:case 22:case 23:case 24:case 26:case 27:case 28:case 31:{
+        // Argument counts including `this`, for the stdcall cleanup.
+        static constexpr uint32_t args[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,4,5,0,3,2,2,4,2,0,5,5,5,0,0,2};
+        ret(0x80004001,args[method]);return true;}
+    default:return false;
+    }
+}
 void inputDispatch(){
     uint32_t kind=(inputToken-inputMethodBase)/0x1000,method=((inputToken-inputMethodBase)%0x1000)/16;
     uint32_t self=arg(0);auto found=inputObjects.find(self);
@@ -81,25 +267,34 @@ void inputDispatch(){
         ++object.references;write32(arg(2),self);ret(0,3);return;
     }
     if(method==1){ret(++object.references,1);return;}
-    if(method==2){uint32_t refs=--object.references;if(!refs){heaps->free(GuestHeaps::process,object.table);heaps->free(GuestHeaps::process,self);inputObjects.erase(found);}ret(refs,1);return;}
+    if(method==2){uint32_t refs=--object.references;if(!refs){if(kind==4&&object.acquired)--inputPadAcquired;
+        heaps->free(GuestHeaps::process,object.table);heaps->free(GuestHeaps::process,self);inputObjects.erase(found);}ret(refs,1);return;}
     if(kind==1){
         switch(method){
         case 3:{uint32_t output=arg(2);if(!output){ret(0x80004003,4);return;}write32(output,0);
-            uint32_t device=inputGuidEquals(arg(1),keyboardGuid)?2:inputGuidEquals(arg(1),mouseGuid)?3:0;
+            uint32_t device=inputGuidEquals(arg(1),keyboardGuid)?2:inputGuidEquals(arg(1),mouseGuid)?3:inputGuidEquals(arg(1),padGuid)?4:0;
+            if(device==4){std::lock_guard<std::mutex> lock(inputMutex);if(!inputPadConnected)device=0;}
+            if(inputGuidEquals(arg(1),padGuid))NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","DirectInput CreateDevice gamepad: %s",device?"created":"not connected");
             if(arg(3)){ret(0x80040110,4);return;}if(!device){ret(0x80070002,4);return;}
             write32(output,createInputObject(device));ret(0,4);return;}
         case 4:{uint32_t type=arg(1),callback=arg(2),context=arg(3),flags=arg(4);
-            if(!callback||flags&~0x131u){ret(diInvalid,5);return;}
+            if(!callback||flags&~0x70111u){ret(diInvalid,5);return;}
+            bool pad;{std::lock_guard<std::mutex> lock(inputMutex);pad=inputPadConnected;}
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","DirectInput EnumDevices type=%u flags=%x gamepad=%d",type,flags,int(pad));
             uint32_t instance=allocate(580);
-            try{for(uint32_t device:{2u,3u}){
-                uint32_t deviceType=device==2?0x13:0x12;
-                uint32_t deviceClass=device==2?3:2;
-                if(type!=0&&type!=1&&type!=deviceClass&&(type&0xff)!=deviceType)continue;
+            try{for(uint32_t device:{2u,3u,4u}){
+                if(device==4&&(!pad||(flags&0x100u)))continue;  // no force feedback
+                uint32_t deviceType=device==2?0x13:device==3?0x12:0x15;
+                uint32_t deviceClass=device==2?3:device==3?2:4;
+                if(type!=0&&(type!=1||device==4)&&type!=deviceClass&&(type&0xff)!=deviceType)continue;
                 inputDeviceInstance(instance,device,580);
-                if(!callGuest(callback,{instance,context}))break;
+                uint32_t proceed=callGuest(callback,{instance,context});
+                if(device==4)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","DirectInput EnumDevices offered the gamepad; callback returned %u",proceed);
+                if(!proceed)break;
             }}catch(...){heaps->free(GuestHeaps::process,instance);throw;}
             heaps->free(GuestHeaps::process,instance);ret(0,5);return;}
-        case 5:ret(inputGuidEquals(arg(1),keyboardGuid)||inputGuidEquals(arg(1),mouseGuid)?0:0x80070002,2);return;
+        case 5:{if(inputGuidEquals(arg(1),padGuid)){std::lock_guard<std::mutex> lock(inputMutex);ret(inputPadConnected?0:1,2);return;}
+            ret(inputGuidEquals(arg(1),keyboardGuid)||inputGuidEquals(arg(1),mouseGuid)?0:0x80070002,2);return;}
         case 7:ret(arg(2)==0x800?0:diInvalid,3);return;
         case 9:{uint32_t format=arg(2),callback=arg(3),context=arg(4),flags=arg(5);
             if(!validActionFormat(format)||!callback||(flags&~0x7110u)){ret(diInvalid,6);return;}
@@ -118,6 +313,7 @@ void inputDispatch(){
         default:throw GuestStop("DirectInput interface method pending: "+std::to_string(method));
         }
     }
+    if(kind==4&&joystickMethod(object,self,method))return;
     switch(method){
     case 3:{uint32_t output=arg(1);if(!output||read32(output)!=44){ret(diInvalid,2);return;}
         std::memset(ptr(output+4,40),0,40);write32(output+4,1);write32(output+8,kind==2?0x413:0x212);
@@ -129,8 +325,11 @@ void inputDispatch(){
         else write32(header+16,object.bufferSize);
         ret(0,3);return;}
     case 7:if(!object.size||!object.cooperative){ret(diInvalid,1);return;}if(object.acquired){ret(1,1);return;}
-        {std::lock_guard<std::mutex> lock(inputMutex);object.sequence=inputSequence;object.pending.clear();object.overflow=false;}object.acquired=true;ret(0,1);return;
-    case 8:{bool previous=object.acquired;object.acquired=false;ret(previous?0:1,1);return;}
+        {std::lock_guard<std::mutex> lock(inputMutex);object.sequence=inputSequence;object.pending.clear();object.overflow=false;
+         if(kind==4){object.lastValues.clear();for(auto& item:object.format)object.lastValues.push_back(padItemValue(object,item));++inputPadAcquired;
+             NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Gamepad acquired by the game: %zu objects",object.format.size());}}
+        object.acquired=true;ret(0,1);return;
+    case 8:{bool previous=object.acquired;object.acquired=false;if(previous&&kind==4)--inputPadAcquired;ret(previous?0:1,1);return;}
     case 9:{if(!object.acquired){ret(diNotAcquired,3);return;}
         if(arg(1)!=object.size||!arg(2)){ret(diInvalid,3);return;}
         std::lock_guard<std::mutex> lock(inputMutex);std::memset(ptr(arg(2),object.size),0,object.size);

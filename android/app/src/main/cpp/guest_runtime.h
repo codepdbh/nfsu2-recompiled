@@ -9,6 +9,12 @@ void setGuestDisplaySize(unsigned width,unsigned height);
 void setGuestKey(unsigned scan,bool down);
 void clearGuestInput();
 bool guestDrivingControls();
+// Physical gamepad seen by the game as a DirectInput joystick: axes X, Y, Z
+// (triggers), Rx, Ry, Rz in -1..1; buttons A B X Y LB RB Back Start LS RS as bits.
+void setGuestPad(const float axes[6],uint32_t buttons,int hatX,int hatY);
+void setGuestPadConnected(bool connected);
+// True while the game has the joystick acquired (then the pad stops emulating keys).
+bool guestGamepadInUse();
 // Launcher option; only before the guest boots.
 void setGuestWidescreen(bool enabled);
 void setGuestLanguage(const char* language);

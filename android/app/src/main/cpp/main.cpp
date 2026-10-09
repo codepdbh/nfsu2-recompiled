@@ -230,6 +230,12 @@ struct Host {
 };
 static GamepadInput gamepad;
 static void setPadKey(unsigned scan,bool down){setGuestKey(scan,down);}
+static void publishPad(){
+    auto state=gamepad.padState();
+    // Z: LT pushes it one way and RT the other, as DirectInput shows an Xbox pad.
+    const float axes[6]={state.leftX,state.leftY,state.leftTrigger-state.rightTrigger,state.rightX,state.rightY,0.f};
+    setGuestPad(axes,state.buttons,state.hatX,state.hatY);
+}
 static void onCommand(android_app* app, int32_t command) {
     auto& h = *static_cast<Host*>(app->userData);
     if (command == APP_CMD_RESUME) { h.resumed = true; h.failed = false; }
@@ -241,9 +247,10 @@ static void onCommand(android_app* app, int32_t command) {
 }
 static int32_t onInput(android_app*,AInputEvent* event){
     int32_t type=AInputEvent_getType(event);
-    if(type==AINPUT_EVENT_TYPE_MOTION)return gamepad.motion(event,guestDrivingControls(),setPadKey)?1:0;
+    gamepad.setKeyEmulation(!guestGamepadInUse());
+    if(type==AINPUT_EVENT_TYPE_MOTION){bool handled=gamepad.motion(event,guestDrivingControls(),setPadKey);if(handled)publishPad();return handled?1:0;}
     if(type!=AINPUT_EVENT_TYPE_KEY)return 0;
-    if(GamepadInput::isGamepad(event)&&gamepad.key(event,guestDrivingControls(),setPadKey))return 1;
+    if(GamepadInput::isGamepad(event)&&gamepad.key(event,guestDrivingControls(),setPadKey)){publishPad();return 1;}
     int32_t key=AKeyEvent_getKeyCode(event);unsigned scan=0;
     switch(key){
     case AKEYCODE_DPAD_UP:scan=0xc8;break;case AKEYCODE_DPAD_DOWN:scan=0xd0;break;
@@ -298,6 +305,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nat
 }
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeResolution(JNIEnv*,jclass,jint width,jint height){setGuestResolution(unsigned(width),unsigned(height));}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeFrameLimit(JNIEnv*,jclass,jint cap){setGuestFrameLimit(unsigned(cap));}
+extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeGamepadConnected(JNIEnv*,jclass,jboolean connected){setGuestPadConnected(connected==JNI_TRUE);}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeWidescreen(JNIEnv*,jclass,jboolean enabled){setGuestWidescreen(enabled==JNI_TRUE);}
 // Minimap at the top-left: the bottom-left corner sits under the steering thumb.
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeMinimapTop(JNIEnv*,jclass,jboolean top){nfs_widescreen_set_minimap_offset(top==JNI_TRUE?-230.0f:0.0f);}
@@ -339,7 +347,7 @@ void android_main(android_app* app) {
         const bool active = host.resumed && app->window && !host.failed;
         int id = ALooper_pollOnce(active ? (d3d9RequestsSurface()?16:0) : -1, nullptr, &events, reinterpret_cast<void**>(&source));
         if (id >= 0 && source) source->process(app, source);
-        gamepad.refresh(guestDrivingControls(),setPadKey);
+        gamepad.setKeyEmulation(!guestGamepadInUse());gamepad.refresh(guestDrivingControls(),setPadKey);
         if (app->destroyRequested) break;
         if (!host.resumed || !app->window || host.failed) continue;
         try {

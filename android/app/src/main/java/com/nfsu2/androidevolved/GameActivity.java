@@ -105,6 +105,7 @@ public final class GameActivity extends NativeActivity {
                     (sources&android.view.InputDevice.SOURCE_JOYSTICK)==android.view.InputDevice.SOURCE_JOYSTICK)connected=true;
         }
         if(touchControls!=null)touchControls.setGamepadConnected(connected);
+        nativeGamepadConnected(connected);
     }
     private final Runnable updateControlMode = new Runnable() {
         @Override public void run() {
@@ -118,6 +119,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeResolution(int width, int height);
     private static native void nativeFrameLimit(int framesPerSecond);
     private static native void nativeWidescreen(boolean enabled);
+    private static native void nativeGamepadConnected(boolean connected);
     private static native void nativeMinimapTop(boolean top);
     private static native void nativeBackBuffers(int count);
     private static native void nativeCpuTextures(boolean enabled);
