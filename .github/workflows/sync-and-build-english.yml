@@ -1,0 +1,232 @@
+name: Sync Upstream & Build English APK
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if release already exists'
+        required: false
+        type: boolean
+        default: false
+      upstream_tag:
+        description: 'Specific upstream tag to translate (leave empty for latest)'
+        required: false
+        type: string
+        default: ''
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/sync-and-build-english.yml'
+      - 'scripts/translate_smali.py'
+
+concurrency:
+  group: sync-build-english-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Fork Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Git User
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync Git Commits from Upstream
+        run: |
+          git remote add upstream https://github.com/codepdbh/nfsu2-recompiled.git || true
+          git fetch upstream main || true
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Branch is already up to date with upstream/main."
+          else
+            echo "Merging upstream updates..."
+            git merge --no-edit -X ours upstream/main || true
+            git push origin main || true
+          fi
+
+      - name: Query Upstream and Local Releases
+        id: release-check
+        run: |
+          UPSTREAM_TAG="${{ github.event.inputs.upstream_tag }}"
+          if [ -z "$UPSTREAM_TAG" ]; then
+            UPSTREAM_INFO=$(curl -s https://api.github.com/repos/codepdbh/nfsu2-recompiled/releases/latest)
+            UPSTREAM_TAG=$(echo "$UPSTREAM_INFO" | jq -r '.tag_name // empty')
+          else
+            UPSTREAM_INFO=$(curl -s "https://api.github.com/repos/codepdbh/nfsu2-recompiled/releases/tags/$UPSTREAM_TAG")
+          fi
+
+          if [ -z "$UPSTREAM_TAG" ] || [ "$UPSTREAM_TAG" = "null" ]; then
+            echo "Error: Could not retrieve upstream release tag."
+            exit 1
+          fi
+
+          echo "Latest upstream release tag: $UPSTREAM_TAG"
+          echo "upstream_tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
+
+          # Check if our fork already released this tag
+          LOCAL_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${UPSTREAM_TAG}-en")
+          LOCAL_TAG=$(echo "$LOCAL_RELEASE" | jq -r '.tag_name // empty')
+
+          FORCE_BUILD="${{ github.event.inputs.force_build }}"
+          if [ "$LOCAL_TAG" = "${UPSTREAM_TAG}-en" ] && [ "$FORCE_BUILD" != "true" ]; then
+            echo "Release ${UPSTREAM_TAG}-en already exists in fork and force_build is not enabled."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release ${UPSTREAM_TAG}-en will be built."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Extract APK download URLs
+          ARM64_URL=$(echo "$UPSTREAM_INFO" | jq -r '.assets[] | select(.name | test("arm64.*\\.apk$")) | .browser_download_url' | head -n 1)
+          ARMV7_URL=$(echo "$UPSTREAM_INFO" | jq -r '.assets[] | select(.name | test("armeabi-v7a.*\\.apk$")) | .browser_download_url' | head -n 1)
+          UPSTREAM_BODY=$(echo "$UPSTREAM_INFO" | jq -r '.body // ""')
+
+          echo "arm64_url=$ARM64_URL" >> "$GITHUB_OUTPUT"
+          echo "armv7_url=$ARMV7_URL" >> "$GITHUB_OUTPUT"
+          echo "$UPSTREAM_BODY" > upstream_notes.md
+
+      - name: Set up Java 21 & Python
+        if: steps.release-check.outputs.should_build == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Python
+        if: steps.release-check.outputs.should_build == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download Apktool
+        if: steps.release-check.outputs.should_build == 'true'
+        run: |
+          curl -L "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar" -o apktool.jar
+
+      - name: Prepare Signing Keystore
+        if: steps.release-check.outputs.should_build == 'true'
+        run: |
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.jks
+          else
+            keytool -genkeypair -v -keystore release.jks -alias nfsu2 -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "androidrelease" -keypass "androidrelease" \
+              -dname "CN=NFSU2 English, OU=Android, O=Recompiled, L=Global, S=Global, C=US"
+          fi
+
+      - name: Translate and Rebuild ARM64 APK
+        if: steps.release-check.outputs.should_build == 'true' && steps.release-check.outputs.arm64_url != ''
+        run: |
+          UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
+          ARM64_URL="${{ steps.release-check.outputs.arm64_url }}"
+
+          echo "Downloading $ARM64_URL..."
+          curl -L "$ARM64_URL" -o upstream_arm64.apk
+
+          echo "Decompiling ARM64 APK with apktool..."
+          java -jar apktool.jar d upstream_arm64.apk -o unpacked_arm64 -f
+
+          echo "Running smali translation to English..."
+          python3 scripts/translate_smali.py unpacked_arm64
+
+          echo "Rebuilding translated ARM64 APK..."
+          java -jar apktool.jar b unpacked_arm64 -o unsigned_arm64.apk
+
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          echo "Using Android Build Tools in $BUILD_TOOLS_DIR"
+
+          echo "Aligning APK..."
+          $BUILD_TOOLS_DIR/zipalign -p -f -v 4 unsigned_arm64.apk "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+
+          echo "Signing APK..."
+          STORE_PASS="${{ secrets.KEYSTORE_PASSWORD || 'androidrelease' }}"
+          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+
+          echo "Verifying APK..."
+          $BUILD_TOOLS_DIR/apksigner verify "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+
+      - name: Translate and Rebuild ARMv7 APK (if present)
+        if: steps.release-check.outputs.should_build == 'true' && steps.release-check.outputs.armv7_url != ''
+        run: |
+          UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
+          ARMV7_URL="${{ steps.release-check.outputs.armv7_url }}"
+
+          echo "Downloading $ARMV7_URL..."
+          curl -L "$ARMV7_URL" -o upstream_armv7.apk
+
+          echo "Decompiling ARMv7 APK with apktool..."
+          java -jar apktool.jar d upstream_armv7.apk -o unpacked_armv7 -f
+
+          echo "Running smali translation to English..."
+          python3 scripts/translate_smali.py unpacked_armv7
+
+          echo "Rebuilding translated ARMv7 APK..."
+          java -jar apktool.jar b unpacked_armv7 -o unsigned_armv7.apk
+
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+
+          echo "Aligning APK..."
+          $BUILD_TOOLS_DIR/zipalign -p -f -v 4 unsigned_armv7.apk "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
+
+          echo "Signing APK..."
+          STORE_PASS="${{ secrets.KEYSTORE_PASSWORD || 'androidrelease' }}"
+          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
+
+          echo "Verifying APK..."
+          $BUILD_TOOLS_DIR/apksigner verify "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
+
+      - name: Generate Checksums and Release Notes
+        if: steps.release-check.outputs.should_build == 'true'
+        run: |
+          UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
+          sha256sum NFSU2-AndroidEvolved-*-English-*.apk > "NFSU2-${UPSTREAM_TAG}-English-SHA256SUMS.txt"
+
+          cat << 'EOF' > release_body.md
+          ## Need for Speed: Underground 2 Android Evolved (English Translated)
+
+          Automated build tracking upstream releases from [codepdbh/nfsu2-recompiled](https://github.com/codepdbh/nfsu2-recompiled).
+
+          ### What's Changed in this Build:
+          - **Full English Localization**: Launcher interface, settings dialogs, options (Resolution, FPS limit, Widescreen, CPU/GPU sync, Compressed textures), and touch controls editor are translated into English.
+          - **Default English Audio & Text**: Game language automatically defaults to `English UK` (`LANGUAGES/English.bin`) instead of Spanish.
+          - **Inherits Latest Upstream Performance Fixes**:
+            - 56% idle lock stall eliminated in the guest render thread.
+            - Low-overhead Direct3D 9 bridge dispatch and optimized DirectSound mixing.
+            - DXVK pipeline caching enabled.
+
+          ### Recommended Settings for Smooth 60/120 FPS on Snapdragon 8+ Gen 1:
+          1. **Vulkan Driver**: If using Snapdragon (Adreno 730), load a **Mesa Turnip driver** (e.g. Turnip v24.3.0 or v25.x for Adreno 700 series) in launcher options via `Import ZIP`.
+          2. **FPS Limit**: Set to **60 FPS** or **120 FPS** to match your phone's display refresh rate (prevents FIFO vsync jitter).
+          3. **CPU/GPU Sync**: Set to **2 (Performance · CPU and GPU in parallel)**.
+          4. **Internal Resolution**: Set to **75% · balanced** or **Native** depending on thermal preferences.
+
+          ### Downloads & Checksums
+          See attached APK assets below. Install the APK over your existing install to keep all career progress and settings.
+          EOF
+
+      - name: Publish GitHub Release
+        if: steps.release-check.outputs.should_build == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "${{ steps.release-check.outputs.upstream_tag }}-en"
+          name: "NFSU2 Android Evolved ${{ steps.release-check.outputs.upstream_tag }} (English Translation)"
+          body_path: release_body.md
+          files: |
+            NFSU2-AndroidEvolved-*-English-arm64.apk
+            NFSU2-AndroidEvolved-*-English-armeabi-v7a.apk
+            NFSU2-*-English-SHA256SUMS.txt
+          draft: false
+          prerelease: false
