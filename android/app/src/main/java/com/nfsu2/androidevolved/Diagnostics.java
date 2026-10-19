@@ -31,7 +31,7 @@ import java.util.zip.ZipOutputStream;
  * attach.
  */
 final class Diagnostics {
-    static final String ISSUES = "https://github.com/codepdbh/nfsu2-recompiled/issues/new";
+    static final String ISSUES = "https://github.com/punitr2007/nfsu2-recompiled/issues/new";
     private static final int LIMIT = 4 * 1024 * 1024;
     private static final String PREFS = "nfsu2_diagnostics";
 
@@ -64,10 +64,10 @@ final class Diagnostics {
         GpuDrivers.Driver driver = GpuDrivers.selected(context);
         return "NFSU2 Android Evolved " + ReleaseUpdates.installed(context)
                 + "\nAPK ABI: " + (Process.is64Bit() ? "arm64-v8a" : "armeabi-v7a")
-                + "\nTeléfono: " + Build.MANUFACTURER + " " + Build.MODEL
+                + "\nPhone: " + Build.MANUFACTURER + " " + Build.MODEL
                 + "\nAndroid: " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")"
                 + "\nSoC: " + (Build.VERSION.SDK_INT >= 31 ? Build.SOC_MANUFACTURER + " " + Build.SOC_MODEL : Build.HARDWARE)
-                + "\nDriver Vulkan: " + (driver == null ? "Sistema" : driver.name) + "\n";
+                + "\nVulkan Driver: " + (driver == null ? "System" : driver.name) + "\n";
     }
 
     static File createReport(Context context) throws Exception {
@@ -77,15 +77,15 @@ final class Diagnostics {
         if (old != null) for (File file : old)
             if (file.isFile() && file.lastModified() < System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)) file.delete();
         String date = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
-        File report = new File(directory, "NFSU2-diagnostico-" + date + ".zip");
+        File report = new File(directory, "NFSU2-diagnostic-" + date + ".zip");
         try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(report))) {
             StringBuilder info = new StringBuilder(summary(context));
-            info.append("Fecha: ").append(new Date()).append("\nABI: ").append(Arrays.toString(Build.SUPPORTED_ABIS))
-                    .append("\n\nOpciones:\n");
+            info.append("Date: ").append(new Date()).append("\nABI: ").append(Arrays.toString(Build.SUPPORTED_ABIS))
+                    .append("\n\nOptions:\n");
             for (GameOptions.Option option : GameOptions.ALL)
                 info.append(option.key).append('=').append(GameOptions.get(context, option.key)).append('\n');
             info.append("language=").append(GameOptions.language(context)).append('\n');
-            add(zip, "informe.txt", info.toString().getBytes(StandardCharsets.UTF_8));
+            add(zip, "report.txt", info.toString().getBytes(StandardCharsets.UTF_8));
             add(zip, "logcat.txt", logcat(0));
             ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (Build.VERSION.SDK_INT >= 30 && manager != null) addExitInfo(zip, manager, context);
@@ -132,15 +132,15 @@ final class Diagnostics {
         }
         if (key.size() > 35) key = key.subList(key.size() - 35, key.size());
         if (tail.size() > 60) tail = tail.subList(tail.size() - 60, tail.size());
-        String title = "[Android] " + Build.MODEL + ": " + (crash == null ? "" : "cierre inesperado");
+        String title = "[Android] " + Build.MODEL + ": " + (crash == null ? "Diagnostic report" : "Unexpected close");
         while (true) {
-            String body = "### Qué ocurrió\n" + (crash == null ? "" : crash + "\n") + "\n### Pasos para reproducirlo\n\n"
-                    + "### Dispositivo\n" + summary(context)
+            String body = "### What happened\n" + (crash == null ? "" : crash + "\n") + "\n### Steps to reproduce\n\n"
+                    + "### Device\n" + summary(context)
                     + "\n### Full report\nSaved on device at **" + zipLocation
-                    + "**. Si puedes, adjúntalo aquí: arrástralo o toca \"Paste, drop, or click to add files\".\n"
-                    + "\n### Resumen técnico\n```\n" + String.join("\n", key)
-                    + (lastFrame == null ? "" : "\nÚltimo fotograma: " + lastFrame)
-                    + "\n--- últimas líneas del juego ---\n" + String.join("\n", tail) + "\n```\n";
+                    + "**. If possible, attach it here: drag and drop or tap \"Paste, drop, or click to add files\".\n"
+                    + "\n### Technical summary\n```\n" + String.join("\n", key)
+                    + (lastFrame == null ? "" : "\nLast frame: " + lastFrame)
+                    + "\n--- Last game log lines ---\n" + String.join("\n", tail) + "\n```\n";
             Uri uri = Uri.parse(ISSUES).buildUpon().appendQueryParameter("title", title).appendQueryParameter("body", body).build();
             if (uri.toString().length() <= URL_BUDGET || (tail.isEmpty() && key.size() <= 1)) return uri;
             if (!tail.isEmpty()) tail = tail.subList(Math.min(tail.size(), 5), tail.size());

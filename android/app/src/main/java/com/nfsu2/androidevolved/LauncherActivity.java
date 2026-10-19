@@ -71,18 +71,18 @@ public final class LauncherActivity extends Activity {
     private void showWhatsNew(String version) {
         AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("Updated to version " + version + "!")
-                .setMessage("Cargando las novedades…")
+                .setMessage("Loading what's new…")
                 .setPositiveButton("OK", (d, which) -> ReleaseUpdates.whatsNewSeen(this))
                 .setNeutralButton("View on GitHub", (d, which) -> {
                     ReleaseUpdates.whatsNewSeen(this);
-                    openUrl(Uri.parse("https://github.com/codepdbh/nfsu2-recompiled/releases/tag/v" + Uri.encode(version)));
+                    openUrl(Uri.parse("https://github.com/punitr2007/nfsu2-recompiled/releases/tag/v" + Uri.encode(version)));
                 })
                 .setOnCancelListener(d -> ReleaseUpdates.whatsNewSeen(this))
                 .show();
         ReleaseUpdates.releaseNotes(this, version, notes -> {
             if (!dialog.isShowing()) return;
             // In the app, skip the download/install preamble of the release page.
-            int start = notes == null ? -1 : notes.indexOf("Novedades");
+            int start = notes == null ? -1 : (notes.indexOf("What's Changed") >= 0 ? notes.indexOf("What's Changed") : notes.indexOf("Novedades"));
             if (start > 0) notes = notes.substring(start);
             dialog.setMessage(notes != null ? notes
                     : "Could not load what's new (offline or not yet published). You can view on GitHub.");
@@ -97,7 +97,7 @@ public final class LauncherActivity extends Activity {
         if (crash != null) {
             Diagnostics.acknowledgeCrashes(this);
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("The game closed").setMessage(crash + ".\n\n¿Quieres enviar el registro completo a GitHub para que se pueda corregir?")
+                    .setTitle("The game closed").setMessage(crash + ".\n\nWould you like to send the complete log to GitHub so it can be fixed?")
                     .setPositiveButton("Report on GitHub", (dialog, which) -> prepareReport(crash))
                     .setNegativeButton("Not now", null).show();
         }
@@ -192,7 +192,7 @@ public final class LauncherActivity extends Activity {
         for (String folder : new String[] {"GLOBAL", "TRACKS", "CARS", "FRONTEND", "LANGUAGES"})
             if (!(allowed && new File(root, folder).isDirectory())) missing.append(missing.length() == 0 ? "" : ", ").append(folder);
         addCheck(missing.length() == 0 ? "Game folders" : "Missing folders: " + missing, missing.length() == 0, true);
-        addCheck("HUD panorámico (scripts/…WidescreenFix.dat)",
+        addCheck("Widescreen HUD (scripts/…WidescreenFix.dat)",
                 allowed && new File(root, "scripts/NFSUnderground2.WidescreenFix.dat").isFile(), false);
         boolean ready = exe && !languages().isEmpty();
         status.setText(!allowed ? "Grant file access to read internal storage/nfsu2."
@@ -216,7 +216,7 @@ public final class LauncherActivity extends Activity {
             optionsList.addView(optionRow(option.title, option.label(GameOptions.get(this, option.key)), () -> chooseOption(option)));
         optionsList.addView(optionRow("Online server", GameOptions.onlineServer(this), this::chooseOnlineServer));
         optionsList.addView(optionRow("Check for updates",
-                checkingUpdates ? "Comprobando GitHub…" : "Version " + ReleaseUpdates.installed(this), () -> checkUpdates(true)));
+                checkingUpdates ? "Checking GitHub…" : "Version " + ReleaseUpdates.installed(this), () -> checkUpdates(true)));
         optionsList.addView(optionRow("Report an issue", "Full log to GitHub", () -> prepareReport(null)));
     }
 
@@ -312,7 +312,7 @@ public final class LauncherActivity extends Activity {
                     try { GpuDrivers.remove(this, driver); refreshOptions(); }
                     catch (java.io.IOException error) { message("Vulkan driver", error.getMessage()); }
                 })
-                .setNegativeButton("Volver", null).show();
+                .setNegativeButton("Back", null).show();
     }
 
     private void probeDriver(boolean thenPlay) {
@@ -328,12 +328,12 @@ public final class LauncherActivity extends Activity {
             boolean failed = gpu.optBoolean("driverLoadFailed") || gpu.has("probeError");
             if (playAfterProbe && !failed && gpu.optBoolean("compatible")) { playAfterProbe = false; launch(); return; }
             playAfterProbe = false;
-            String text = failed ? "No se pudo usar el driver: " + gpu.optString("probeError", "error al iniciar Vulkan.")
+            String text = failed ? "Could not use driver: " + gpu.optString("probeError", "error initializing Vulkan.")
                     : "GPU: " + gpu.optString("gpu") + "\nVulkan: " + gpu.optString("vulkan")
                       + "\nDriver: " + gpu.optString("driverName", "—") + " " + gpu.optString("driverInfo", "")
-                      + "\nTexturas BC: " + (gpu.optBoolean("bcTextures") ? "on GPU" : "converted on CPU")
+                      + "\nBC Textures: " + (gpu.optBoolean("bcTextures") ? "on GPU" : "converted on CPU")
                       + (gpu.optString("vertexFormatsMissing").isEmpty() ? ""
-                              : "\nTipos de vértice sin soporte: " + gpu.optString("vertexFormatsMissing"))
+                              : "\nUnsupported vertex types: " + gpu.optString("vertexFormatsMissing"))
                       + "\n" + (gpu.optBoolean("compatible") ? "Compatible with the game."
                               : "Missing features: " + gpu.optJSONArray("missing"));
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -347,16 +347,16 @@ public final class LauncherActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_DRIVER_PROBE) {
             showDriverReport(resultCode == RESULT_OK && data != null ? data.getStringExtra("gpu_report")
-                    : "{\"probeError\":\"La prueba se cerró o fue cancelada.\",\"driverLoadFailed\":true}");
+                    : "{\"probeError\":\"Test was closed or cancelled.\",\"driverLoadFailed\":true}");
         } else if (requestCode == REQUEST_DRIVER_ZIP && resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri zip = data.getData();
-            status.setText("Importando driver Vulkan…");
+            status.setText("Importing Vulkan driver…");
             worker.execute(() -> {
                 try {
                     GpuDrivers.Driver driver = GpuDrivers.importZip(this, zip);
                     main.post(() -> {
                         GpuDrivers.select(this, driver.id); refresh();
-                        status.setText("Driver imported: " + driver.name + ". Usa Probar driver para comprobarlo.");
+                        status.setText("Driver imported: " + driver.name + ". Use Test driver to verify.");
                     });
                 } catch (Exception error) {
                     main.post(() -> { refresh(); message("Vulkan driver", "Could not import driver: " + error.getMessage()); });
@@ -386,8 +386,8 @@ public final class LauncherActivity extends Activity {
             updates.edit().putString("notified_tag", result.tag).apply();
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                     .setTitle("New version available: " + result.tag)
-                    .setMessage("Puedes descargarla desde GitHub o seguir jugando con esta versión. Instala el APK encima "
-                            + "del actual para conservar tus partidas y ajustes.")
+                    .setMessage("You can download it from GitHub or continue playing with this version. Install the APK over "
+                            + "the current one to keep your saves and settings.")
                     .setPositiveButton("Update", (dialog, which) -> openUrl(Uri.parse(result.url)))
                     .setNegativeButton("Later", null).show();
         });
@@ -399,7 +399,7 @@ public final class LauncherActivity extends Activity {
      * and the player is told where the ZIP is to attach it.
      */
     private void prepareReport(String crash) {
-        status.setText("Preparando el registro…");
+        status.setText("Preparing log report…");
         worker.execute(() -> {
             try {
                 File report = Diagnostics.createReport(this);
@@ -410,9 +410,9 @@ public final class LauncherActivity extends Activity {
                     new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("Report on GitHub")
                             .setMessage("Full report saved to:\n" + location
-                                    + "\n\nSe abrirá la issue en GitHub con un resumen técnico ya escrito. Describe qué pasó y, "
-                                    + "si puedes, adjunta ese ZIP (GitHub no permite adjuntarlo automáticamente).")
-                            .setPositiveButton("Abrir GitHub", (dialog, which) -> openUrl(issue))
+                                    + "\n\nThe issue will open on GitHub with a technical summary already filled in. Describe what happened and, "
+                                    + "if possible, attach this ZIP file (GitHub does not allow automatic attachments).")
+                            .setPositiveButton("Open GitHub", (dialog, which) -> openUrl(issue))
                             .setNegativeButton("Cancel", null).show();
                 });
             } catch (Exception error) {

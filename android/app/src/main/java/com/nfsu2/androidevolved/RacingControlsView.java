@@ -337,12 +337,12 @@ final class RacingControlsView extends View {
                 .setItems(new String[]{"Style: Classic / Xbox / PlayStation","Tilt steering","FPS limit","Save layout with name","Load custom layout"},(dialog,which)->{
                     if(which==0)chooseStyle();else if(which==1)configureTilt.run();
                     else if(which==2)configureFrameLimit.run();else if(which==3)saveNamedLayout();else loadNamedLayout();
-                }).setNegativeButton("Cerrar",null).show();
+                }).setNegativeButton("Close",null).show();
     }
     private void chooseStyle() {
         String[] ids={"classic","xbox","playstation"};
         new AlertDialog.Builder(getContext()).setTitle("Driving style")
-                .setSingleChoiceItems(new String[]{"Clásico · flechas y pedales","Xbox · volante y A / B / X / Y","PlayStation · volante y × / ○ / □ / △"},style.equals("classic")?0:style.equals("xbox")?1:2,(dialog,which)->{
+                .setSingleChoiceItems(new String[]{"Classic · arrows and pedals","Xbox · wheel and A / B / X / Y","PlayStation · wheel and × / ○ / □ / △"},style.equals("classic")?0:style.equals("xbox")?1:2,(dialog,which)->{
                     style=ids[which];layouts.edit().putString("style",style).apply();
                     layoutControls();dialog.dismiss();
                 }).setNegativeButton("Cancel",null).show();

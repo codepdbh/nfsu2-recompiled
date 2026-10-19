@@ -34,7 +34,7 @@ final class GameOptions {
             new Option(WIDESCREEN, "Widescreen", "on",
                     new String[] {"on", "off"},
                     new String[] {"HUD and camera corrected", "Original 4:3 stretched"}),
-            new Option(MINIMAP, "Minimapa", "top",
+            new Option(MINIMAP, "Minimap", "top",
                     new String[] {"top", "bottom"},
                     new String[] {"Top-left", "Bottom-left (original)"}),
             new Option(LATENCY, "CPU/GPU sync", "2",

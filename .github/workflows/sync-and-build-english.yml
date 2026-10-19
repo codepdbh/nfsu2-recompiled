@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       upstream_tag:
-        description: 'Specific upstream tag to translate (leave empty for latest)'
+        description: 'Specific upstream tag to build (leave empty for latest)'
         required: false
         type: string
         default: ''
@@ -20,7 +20,7 @@ on:
       - main
     paths:
       - '.github/workflows/sync-and-build-english.yml'
-      - 'scripts/translate_smali.py'
+      - 'android/**'
 
 concurrency:
   group: sync-build-english-${{ github.ref }}
@@ -30,7 +30,7 @@ permissions:
   contents: write
 
 jobs:
-  check-and-build:
+  sync-and-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Fork Repository
@@ -43,18 +43,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Sync Git Commits from Upstream
-        run: |
-          git remote add upstream https://github.com/codepdbh/nfsu2-recompiled.git || true
-          git fetch upstream main || true
-          if git merge-base --is-ancestor upstream/main HEAD; then
-            echo "Branch is already up to date with upstream/main."
-          else
-            echo "Merging upstream updates..."
-            git merge --no-edit -X ours upstream/main || true
-            git push origin main || true
-          fi
 
       - name: Query Upstream and Local Releases
         id: release-check
@@ -98,23 +86,22 @@ jobs:
           echo "armv7_url=$ARMV7_URL" >> "$GITHUB_OUTPUT"
           echo "$UPSTREAM_BODY" > upstream_notes.md
 
-      - name: Set up Java 21 & Python
+      - name: Set up Java 21
         if: steps.release-check.outputs.should_build == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Python
+      - name: Set up Android SDK & NDK
         if: steps.release-check.outputs.should_build == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        uses: android-actions/setup-android@v3
 
-      - name: Download Apktool
+      - name: Install NDK
         if: steps.release-check.outputs.should_build == 'true'
         run: |
-          curl -L "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar" -o apktool.jar
+          sdkmanager --install "ndk;27.0.12077973"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Prepare Signing Keystore
         if: steps.release-check.outputs.should_build == 'true'
@@ -127,66 +114,85 @@ jobs:
               -dname "CN=NFSU2 English, OU=Android, O=Recompiled, L=Global, S=Global, C=US"
           fi
 
-      - name: Translate and Rebuild ARM64 APK
+      - name: Download Upstream Libraries & Build ARM64 APK
         if: steps.release-check.outputs.should_build == 'true' && steps.release-check.outputs.arm64_url != ''
         run: |
           UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
           ARM64_URL="${{ steps.release-check.outputs.arm64_url }}"
 
-          echo "Downloading $ARM64_URL..."
+          echo "Downloading upstream ARM64 APK: $ARM64_URL..."
           curl -L "$ARM64_URL" -o upstream_arm64.apk
 
-          echo "Decompiling ARM64 APK with apktool..."
-          java -jar apktool.jar d upstream_arm64.apk -o unpacked_arm64 -f
+          echo "Extracting upstream native libraries..."
+          unzip -o upstream_arm64.apk "lib/arm64-v8a/*" -d extracted_libs/
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp -f extracted_libs/lib/arm64-v8a/* android/app/src/main/jniLibs/arm64-v8a/
 
-          echo "Running smali translation to English..."
-          python3 scripts/translate_smali.py unpacked_arm64
+          echo "Compiling registry_sync.cpp for arm64-v8a..."
+          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++ \
+            -shared -fPIC -O2 \
+            -std=c++17 \
+            -Wall -Wextra \
+            -llog \
+            -static-libstdc++ \
+            android/app/src/main/cpp/registry_sync.cpp \
+            -o android/app/src/main/jniLibs/arm64-v8a/libregistry_sync.so
 
-          echo "Rebuilding translated ARM64 APK..."
-          java -jar apktool.jar b unpacked_arm64 -o unsigned_arm64.apk
+          echo "Building English ARM64 APK with Gradle..."
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cd ..
 
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
           echo "Using Android Build Tools in $BUILD_TOOLS_DIR"
 
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUT_APK="NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+
           echo "Aligning APK..."
-          $BUILD_TOOLS_DIR/zipalign -p -f -v 4 unsigned_arm64.apk "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+          $BUILD_TOOLS_DIR/zipalign -p -f -v 4 "$UNSIGNED_APK" "$OUT_APK"
 
           echo "Signing APK..."
           STORE_PASS="${{ secrets.KEYSTORE_PASSWORD || 'androidrelease' }}"
-          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "$OUT_APK"
 
           echo "Verifying APK..."
-          $BUILD_TOOLS_DIR/apksigner verify "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
+          $BUILD_TOOLS_DIR/apksigner verify "$OUT_APK"
 
-      - name: Translate and Rebuild ARMv7 APK (if present)
+      - name: Download Upstream Libraries & Build ARMv7 APK (if present)
         if: steps.release-check.outputs.should_build == 'true' && steps.release-check.outputs.armv7_url != ''
         run: |
           UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
           ARMV7_URL="${{ steps.release-check.outputs.armv7_url }}"
 
-          echo "Downloading $ARMV7_URL..."
+          echo "Downloading upstream ARMv7 APK: $ARMV7_URL..."
           curl -L "$ARMV7_URL" -o upstream_armv7.apk
 
-          echo "Decompiling ARMv7 APK with apktool..."
-          java -jar apktool.jar d upstream_armv7.apk -o unpacked_armv7 -f
+          echo "Extracting upstream ARMv7 native libraries..."
+          unzip -o upstream_armv7.apk "lib/armeabi-v7a/*" -d extracted_libs/
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          cp -f extracted_libs/lib/armeabi-v7a/* android/app/src/main/jniLibs/armeabi-v7a/
 
-          echo "Running smali translation to English..."
-          python3 scripts/translate_smali.py unpacked_armv7
-
-          echo "Rebuilding translated ARMv7 APK..."
-          java -jar apktool.jar b unpacked_armv7 -o unsigned_armv7.apk
+          echo "Building English ARMv7 APK with Gradle..."
+          cd android
+          ./gradlew assembleRelease -PnfsAbi=armeabi-v7a --no-daemon
+          cd ..
 
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
 
-          echo "Aligning APK..."
-          $BUILD_TOOLS_DIR/zipalign -p -f -v 4 unsigned_armv7.apk "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUT_APK="NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
 
-          echo "Signing APK..."
+          echo "Aligning ARMv7 APK..."
+          $BUILD_TOOLS_DIR/zipalign -p -f -v 4 "$UNSIGNED_APK" "$OUT_APK"
+
+          echo "Signing ARMv7 APK..."
           STORE_PASS="${{ secrets.KEYSTORE_PASSWORD || 'androidrelease' }}"
-          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
+          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "$OUT_APK"
 
-          echo "Verifying APK..."
-          $BUILD_TOOLS_DIR/apksigner verify "NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-armeabi-v7a.apk"
+          echo "Verifying ARMv7 APK..."
+          $BUILD_TOOLS_DIR/apksigner verify "$OUT_APK"
 
       - name: Generate Checksums and Release Notes
         if: steps.release-check.outputs.should_build == 'true'
@@ -195,26 +201,32 @@ jobs:
           sha256sum NFSU2-AndroidEvolved-*-English-*.apk > "NFSU2-${UPSTREAM_TAG}-English-SHA256SUMS.txt"
 
           cat << 'EOF' > release_body.md
-          ## Need for Speed: Underground 2 Android Evolved (English Translated)
+          ## Need for Speed: Underground 2 Android Evolved (English Translation + Graphics Persistence)
 
-          Automated build tracking upstream releases from [codepdbh/nfsu2-recompiled](https://github.com/codepdbh/nfsu2-recompiled).
+          Automated release synchronized with upstream [codepdbh/nfsu2-recompiled](https://github.com/codepdbh/nfsu2-recompiled).
 
-          ### What's Changed in this Build:
-          - **Full English Localization**: Launcher interface, settings dialogs, options (Resolution, FPS limit, Widescreen, CPU/GPU sync, Compressed textures), and touch controls editor are translated into English.
-          - **Default English Audio & Text**: Game language automatically defaults to `English UK` (`LANGUAGES/English.bin`) instead of Spanish.
-          - **Inherits Latest Upstream Performance Fixes**:
-            - 56% idle lock stall eliminated in the guest render thread.
-            - Low-overhead Direct3D 9 bridge dispatch and optimized DirectSound mixing.
-            - DXVK pipeline caching enabled.
+          ### What's Included in this English Edition:
+          - **100% English Localization**:
+            - Complete English translation across all launcher settings, options, buttons, and dialogs.
+            - In-game language defaults to `English UK` (`LANGUAGES/English.bin`).
+            - On-screen touch racing controls editor and HUD translated into English.
+            - GPU probe and driver compatibility diagnostics translated into English.
+          - **Persistent Graphic Settings**:
+            - Built-in `libregistry_sync.so` automatically loads and saves in-game graphics settings (World LOD, Car Reflections, Shadow Detail, Resolution, FSAA, Fog, etc.) to `/sdcard/nfsu2/registry.ini`.
+            - Settings survive app restarts and system reboots.
+          - **Built-in Self-Updating Fork**:
+            - The in-game update checker checks [punitr2007/nfsu2-recompiled](https://github.com/punitr2007/nfsu2-recompiled/releases) for new English builds.
+          - **Latest Upstream Optimizations**:
+            - Low-latency input handling and Direct3D 9 / Vulkan pipeline caching.
 
-          ### Recommended Settings for Smooth 60/120 FPS on Snapdragon 8+ Gen 1:
-          1. **Vulkan Driver**: If using Snapdragon (Adreno 730), load a **Mesa Turnip driver** (e.g. Turnip v24.3.0 or v25.x for Adreno 700 series) in launcher options via `Import ZIP`.
-          2. **FPS Limit**: Set to **60 FPS** or **120 FPS** to match your phone's display refresh rate (prevents FIFO vsync jitter).
-          3. **CPU/GPU Sync**: Set to **2 (Performance · CPU and GPU in parallel)**.
-          4. **Internal Resolution**: Set to **75% · balanced** or **Native** depending on thermal preferences.
+          ### Recommended Settings (Snapdragon 8 Gen 1 / 2 / 3):
+          - **Vulkan Driver**: System default or Mesa Turnip driver via `Import ZIP` for Adreno 700 series GPUs.
+          - **FPS Limit**: Match your device's refresh rate (e.g. 60 FPS or 120 FPS).
+          - **CPU/GPU Sync**: `2 (Performance · CPU and GPU in parallel)`.
+          - **Internal Resolution**: 75% or Native.
 
-          ### Downloads & Checksums
-          See attached APK assets below. Install the APK over your existing install to keep all career progress and settings.
+          ### Downloads & Checksums:
+          Install the APK below over your existing app to retain all career progress and settings.
           EOF
 
       - name: Publish GitHub Release
