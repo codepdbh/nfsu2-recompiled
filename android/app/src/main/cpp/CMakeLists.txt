@@ -102,11 +102,6 @@ target_compile_features(nfsu2_android PRIVATE cxx_std_17)
 target_compile_definitions(nfsu2_android PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_compile_options(nfsu2_android PRIVATE -O2 -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)
 target_link_options(nfsu2_android PRIVATE "-uANativeActivity_onCreate")
-# Bind the library's own symbols locally: the lifted code reaches recomp_lookup*,
-# the import bridges and the override table on every indirect call, and with
-# default visibility each of those went through the PLT (1.7% of the render
-# thread on the Redmi Note 8 profile).
-target_link_options(nfsu2_android PRIVATE "-Wl,-Bsymbolic")
 target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio dl)
 if(NFS_GUEST_LTO)
     target_link_options(nfsu2_android PRIVATE -flto=thin "-Wl,--thinlto-jobs=4"

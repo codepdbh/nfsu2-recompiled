@@ -906,7 +906,16 @@ std::string connectGuestRuntime(const char* executable) {
     }
 }
 void requestGuestRuntimeStop() {stopRequested=true;}
-void setGuestPaused(bool paused) {guestPaused=paused;}
+void setGuestPaused(bool paused) {
+    // The AAudio stream keeps pulling from looping voices while the guest is
+    // paused: in the background the last mixed sound repeated until the app
+    // closed. Pause the output with the guest and restart it on resume.
+    bool previous=guestPaused.exchange(paused);
+    if(previous!=paused&&soundStream){
+        aaudio_result_t status=paused?AAudioStream_requestPause(soundStream):AAudioStream_requestStart(soundStream);
+        if(status!=AAUDIO_OK)NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFS","Audio %s failed: %d",paused?"pause":"resume",int(status));
+    }
+}
 bool guestDrivingControls() {return inputDrivingMode.load();}
 void setGuestPad(const float axes[6],uint32_t buttons,int hatX,int hatY){
     std::lock_guard<std::mutex> lock(inputMutex);

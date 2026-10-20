@@ -41,6 +41,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeKey(int scan, boolean down);
     private static native boolean nativeDrivingControls();
     private static native void nativeSyncSave();
+    private static native boolean nativeGamepadUsed();
     private final boolean[] touchKeys=new boolean[256],sentKeys=new boolean[256];
     private boolean tiltLeft,tiltRight,tiltEnabled,tiltCalibrate=true;
     private float tiltFiltered,tiltNeutral,tiltSensitivity=1;
@@ -98,9 +99,16 @@ public final class GameActivity extends NativeActivity {
         @Override public void onInputDeviceRemoved(int id) {updateGamepads();}
         @Override public void onInputDeviceChanged(int id) {updateGamepads();}
     };
-    /** Physical gamepads drive the game natively; the touch layer hides while one is connected. */
+    /**
+     * Physical gamepads (Bluetooth or USB) drive the game; the touch layer hides while one is connected.
+     * Only external devices count: built-in sensors and side keys of several MediaTek phones report
+     * themselves as joysticks with X/Y axes, and their resting value used to steer the car by itself.
+     * Pads in "keyboard" mode report only KEYBOARD but still have gamepad buttons.
+     */
     private void updateGamepads() {
         boolean connected=false;
+        java.util.ArrayList<Integer> accepted=new java.util.ArrayList<>();
+        StringBuilder seen=new StringBuilder();
         for(int id:android.view.InputDevice.getDeviceIds()) {
             android.view.InputDevice device=android.view.InputDevice.getDevice(id);
             if(device==null||device.isVirtual())continue;
@@ -110,8 +118,18 @@ public final class GameActivity extends NativeActivity {
             boolean stick=(sources&android.view.InputDevice.SOURCE_JOYSTICK)==android.view.InputDevice.SOURCE_JOYSTICK&&
                     device.getMotionRange(android.view.MotionEvent.AXIS_X)!=null&&
                     device.getMotionRange(android.view.MotionEvent.AXIS_Y)!=null;
-            if(buttons||stick)connected=true;
+            boolean keys=(sources&android.view.InputDevice.SOURCE_KEYBOARD)==android.view.InputDevice.SOURCE_KEYBOARD&&
+                    device.getKeyboardType()!=android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC&&
+                    device.hasKeys(android.view.KeyEvent.KEYCODE_BUTTON_A)[0];
+            boolean pad=device.isExternal()&&(buttons||stick||keys);
+            seen.append(seen.length()==0?"":"; ").append(device.getName()).append(" [").append(Integer.toHexString(sources))
+                    .append(device.isExternal()?" external":" internal").append(pad?" pad":"").append(']');
+            if(pad){connected=true;accepted.add(id);}
         }
+        android.util.Log.i("NFS","Input devices: "+seen);
+        // Only these devices may move the guest's stick or press its keys.
+        int[] ids=new int[accepted.size()];for(int i=0;i<ids.length;++i)ids[i]=accepted.get(i);
+        nativeGamepadDevices(ids);
         if(touchControls!=null)touchControls.setGamepadConnected(connected);
         nativeGamepadConnected(connected);
     }
@@ -119,6 +137,8 @@ public final class GameActivity extends NativeActivity {
         @Override public void run() {
             if(!foreground||touchControls==null)return;
             touchControls.setGameMode(nativeDrivingControls());
+            // Playing on with the pad after a touch revealed the controls hides them again.
+            if(nativeGamepadUsed())touchControls.gamepadUsed();
             touchControls.postDelayed(this,250);
         }
     };
@@ -130,6 +150,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeWidescreen(boolean enabled);
     private static native void nativeOnlineServer(String host);
     private static native void nativeGamepadConnected(boolean connected);
+    private static native void nativeGamepadDevices(int[] ids);
     private static native void nativeMinimapTop(boolean top);
     private static native void nativeBackBuffers(int count);
     private static native void nativeCpuTextures(boolean enabled);

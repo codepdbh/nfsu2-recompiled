@@ -59,7 +59,11 @@ public:
             return 0;
         }
         uint32_t address=slot->first, remaining=slot->second-static_cast<uint32_t>(capacity);
-        memory_.commit(address,capacity);
+        // Windows heaps always leave committed memory after a block; game code
+        // reads a little past string and file buffers (MW's localized-string
+        // strncpy faulted at the next, uncommitted page on several phones).
+        // Commit up to a page of the free space that follows as slack.
+        memory_.commit(address,capacity+std::min<uint32_t>(remaining,4096u));
         free_.erase(slot); if(remaining) free_[address+static_cast<uint32_t>(capacity)]=remaining;
         h->second.blocks[address]={static_cast<uint32_t>(capacity),bytes}; h->second.live+=capacity;
         if(flags&8) std::memset(memory_.address(address,capacity),0,capacity);
@@ -90,7 +94,7 @@ public:
         if(adjacent!=free_.end() && adjacent->second>=capacity-old.capacity &&
             (!h->second.maximum || h->second.live+capacity-old.capacity<=h->second.maximum)) {
             uint32_t remaining=adjacent->second-static_cast<uint32_t>(capacity-old.capacity);
-            memory_.commit(address,capacity); free_.erase(adjacent);
+            memory_.commit(address,capacity+std::min<uint32_t>(remaining,4096u)); free_.erase(adjacent);
             if(remaining) free_[address+static_cast<uint32_t>(capacity)]=remaining;
             if(flags&8) std::memset(memory_.address(address+old.requested,bytes-old.requested),0,bytes-old.requested);
             h->second.live+=capacity-old.capacity; b->second={static_cast<uint32_t>(capacity),bytes}; return address;

@@ -99,6 +99,11 @@ final class RacingControlsView extends View {
     }
     boolean isDriving() {return racing&&!editing&&!hiddenByGamepad;}
     /** A physical gamepad is connected: get out of the way until the screen is touched. */
+    /** The pad was used while the controls were showing after a touch: get out of the way again. */
+    void gamepadUsed() {
+        if(!gamepadConnected||hiddenByGamepad||editing)return;
+        releaseAll();hiddenByGamepad=true;invalidate();
+    }
     void setGamepadConnected(boolean connected) {
         if(gamepadConnected==connected)return;
         gamepadConnected=connected;
@@ -419,6 +424,15 @@ final class RacingControlsView extends View {
         pointerX=x;pointerY=y;pointer.touch(x/getWidth(),y/getHeight(),phase);
     }
     private void pointerRelease() { if(pointerId>=0){pointerId=-1;pointerTouch(pointerX,pointerY,2);} }
+    /** Releases fingers the event no longer carries (their ACTION_POINTER_UP never arrived). */
+    private void releaseLiftedFingers(MotionEvent e) {
+        java.util.Iterator<java.util.Map.Entry<Integer,Control>> it=fingers.entrySet().iterator();
+        while(it.hasNext()) {
+            java.util.Map.Entry<Integer,Control> finger=it.next();
+            if(e.findPointerIndex(finger.getKey())<0){release(finger.getValue());it.remove();}
+        }
+        if(pointerId>=0&&e.findPointerIndex(pointerId)<0)pointerRelease();
+    }
     void releaseAll() { for(Control c:fingers.values()) release(c); fingers.clear(); pointerRelease(); invalidate(); }
     @Override public boolean onTouchEvent(MotionEvent e) {
         if(editing)return editTouch(e);
@@ -428,10 +442,15 @@ final class RacingControlsView extends View {
             return true;
         }
         if(action==MotionEvent.ACTION_CANCEL) { releaseAll(); return true; }
+        // A new gesture means no finger is down: anything still held lost its
+        // ACTION_UP (edge gestures, palm rejection, overlays) and would stay
+        // pressed forever, e.g. the left arrow steering by itself.
+        if(action==MotionEvent.ACTION_DOWN)releaseAll();
+        else releaseLiftedFingers(e);
         if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_POINTER_DOWN) {
             Control c=hit(e.getX(index),e.getY(index));if(c!=null&&c.scan==STICK&&c.held>0)c=null;
             if(c==null&&pointerId<0&&hit(e.getX(index),e.getY(index))==null){pointerId=id;pointerTouch(e.getX(index),e.getY(index),0);}
-            fingers.put(id,c);hold(c);if(c!=null&&c.scan==STICK)steer(c,e.getX(index));
+            release(fingers.put(id,c));hold(c);if(c!=null&&c.scan==STICK)steer(c,e.getX(index));
         } else if(action==MotionEvent.ACTION_MOVE) {
             for(int i=0;i<e.getPointerCount();++i) {
                 int pointer=e.getPointerId(i);
@@ -452,6 +471,7 @@ final class RacingControlsView extends View {
                 else if(c.scan==EDIT) {releaseAll();editing=true;selected=null;}
                 performClick();
             }
+            if(action==MotionEvent.ACTION_UP)releaseAll();  // the last finger left
         }
         invalidate();return true;
     }
