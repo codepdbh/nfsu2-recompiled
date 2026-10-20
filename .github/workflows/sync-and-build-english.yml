@@ -39,20 +39,17 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Git User
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Query Upstream and Local Releases
         id: release-check
         run: |
           UPSTREAM_TAG="${{ github.event.inputs.upstream_tag }}"
           if [ -z "$UPSTREAM_TAG" ]; then
-            UPSTREAM_INFO=$(curl -s https://api.github.com/repos/codepdbh/nfsu2-recompiled/releases/latest)
+            UPSTREAM_INFO=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/codepdbh/nfsu2-recompiled/releases/latest")
             UPSTREAM_TAG=$(echo "$UPSTREAM_INFO" | jq -r '.tag_name // empty')
           else
-            UPSTREAM_INFO=$(curl -s "https://api.github.com/repos/codepdbh/nfsu2-recompiled/releases/tags/$UPSTREAM_TAG")
+            UPSTREAM_INFO=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/codepdbh/nfsu2-recompiled/releases/tags/$UPSTREAM_TAG")
           fi
 
           if [ -z "$UPSTREAM_TAG" ] || [ "$UPSTREAM_TAG" = "null" ]; then
@@ -70,7 +67,7 @@ jobs:
 
           FORCE_BUILD="${{ github.event.inputs.force_build }}"
           if [ "$LOCAL_TAG" = "${UPSTREAM_TAG}-en" ] && [ "$FORCE_BUILD" != "true" ]; then
-            echo "Release ${UPSTREAM_TAG}-en already exists in fork and force_build is not enabled."
+            echo "Release ${UPSTREAM_TAG}-en already exists in fork and force_build is false. Skipping build."
             echo "should_build=false" >> "$GITHUB_OUTPUT"
           else
             echo "Release ${UPSTREAM_TAG}-en will be built."
@@ -80,11 +77,9 @@ jobs:
           # Extract APK download URLs
           ARM64_URL=$(echo "$UPSTREAM_INFO" | jq -r '.assets[] | select(.name | test("arm64.*\\.apk$")) | .browser_download_url' | head -n 1)
           ARMV7_URL=$(echo "$UPSTREAM_INFO" | jq -r '.assets[] | select(.name | test("armeabi-v7a.*\\.apk$")) | .browser_download_url' | head -n 1)
-          UPSTREAM_BODY=$(echo "$UPSTREAM_INFO" | jq -r '.body // ""')
 
           echo "arm64_url=$ARM64_URL" >> "$GITHUB_OUTPUT"
           echo "armv7_url=$ARMV7_URL" >> "$GITHUB_OUTPUT"
-          echo "$UPSTREAM_BODY" > upstream_notes.md
 
       - name: Set up Java 21
         if: steps.release-check.outputs.should_build == 'true'
@@ -93,15 +88,32 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Android SDK & NDK
-        if: steps.release-check.outputs.should_build == 'true'
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK
+      - name: Set up Android NDK & SDK Tools
         if: steps.release-check.outputs.should_build == 'true'
         run: |
-          sdkmanager --install "ndk;27.0.12077973"
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          fi
+
+          echo "Accepting Android SDK licenses..."
+          yes | sdkmanager --licenses || true
+
+          # Look for pre-installed NDK in $ANDROID_HOME/ndk
+          NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* 2>/dev/null | sort -V | tail -n 1)
+
+          if [ -z "$NDK_PATH" ] || [ ! -d "$NDK_PATH" ]; then
+            echo "No pre-installed NDK found. Installing ndk;27.0.12077973..."
+            yes | sdkmanager --install "ndk;27.0.12077973" || true
+            NDK_PATH="$ANDROID_HOME/ndk/27.0.12077973"
+          fi
+
+          if [ ! -d "$NDK_PATH" ]; then
+            echo "Error: Could not find or install Android NDK."
+            exit 1
+          fi
+
+          echo "Using Android NDK: $NDK_PATH"
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> "$GITHUB_ENV"
 
       - name: Prepare Signing Keystore
         if: steps.release-check.outputs.should_build == 'true'
@@ -120,13 +132,14 @@ jobs:
           UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
           ARM64_URL="${{ steps.release-check.outputs.arm64_url }}"
 
-          echo "Downloading upstream ARM64 APK: $ARM64_URL..."
+          echo "Downloading upstream ARM64 APK from $ARM64_URL..."
           curl -L "$ARM64_URL" -o upstream_arm64.apk
 
-          echo "Extracting upstream native libraries..."
+          echo "Extracting upstream ARM64 native libraries..."
+          rm -rf extracted_libs android/app/src/main/jniLibs/arm64-v8a
           unzip -o upstream_arm64.apk "lib/arm64-v8a/*" -d extracted_libs/
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp -f extracted_libs/lib/arm64-v8a/* android/app/src/main/jniLibs/arm64-v8a/
+          cp -rf extracted_libs/lib/arm64-v8a/* android/app/src/main/jniLibs/arm64-v8a/
 
           echo "Compiling registry_sync.cpp for arm64-v8a..."
           $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++ \
@@ -138,26 +151,30 @@ jobs:
             android/app/src/main/cpp/registry_sync.cpp \
             -o android/app/src/main/jniLibs/arm64-v8a/libregistry_sync.so
 
-          echo "Building English ARM64 APK with Gradle..."
+          echo "Building translated ARM64 APK with Gradle..."
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
           cd ..
 
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
-          echo "Using Android Build Tools in $BUILD_TOOLS_DIR"
+          echo "Using Android build-tools: $BUILD_TOOLS_DIR"
 
           UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
           OUT_APK="NFSU2-AndroidEvolved-${UPSTREAM_TAG}-English-arm64.apk"
 
           echo "Aligning APK..."
           $BUILD_TOOLS_DIR/zipalign -p -f -v 4 "$UNSIGNED_APK" "$OUT_APK"
+          rm -f "$UNSIGNED_APK"
 
           echo "Signing APK..."
-          STORE_PASS="${{ secrets.KEYSTORE_PASSWORD || 'androidrelease' }}"
+          STORE_PASS="androidrelease"
+          if [ -n "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
+            STORE_PASS="${{ secrets.KEYSTORE_PASSWORD }}"
+          fi
           $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "$OUT_APK"
 
-          echo "Verifying APK..."
+          echo "Verifying signed ARM64 APK..."
           $BUILD_TOOLS_DIR/apksigner verify "$OUT_APK"
 
       - name: Download Upstream Libraries & Build ARMv7 APK (if present)
@@ -166,16 +183,28 @@ jobs:
           UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
           ARMV7_URL="${{ steps.release-check.outputs.armv7_url }}"
 
-          echo "Downloading upstream ARMv7 APK: $ARMV7_URL..."
+          echo "Downloading upstream ARMv7 APK from $ARMV7_URL..."
           curl -L "$ARMV7_URL" -o upstream_armv7.apk
 
           echo "Extracting upstream ARMv7 native libraries..."
+          rm -rf extracted_libs android/app/src/main/jniLibs/armeabi-v7a
           unzip -o upstream_armv7.apk "lib/armeabi-v7a/*" -d extracted_libs/
           mkdir -p android/app/src/main/jniLibs/armeabi-v7a
-          cp -f extracted_libs/lib/armeabi-v7a/* android/app/src/main/jniLibs/armeabi-v7a/
+          cp -rf extracted_libs/lib/armeabi-v7a/* android/app/src/main/jniLibs/armeabi-v7a/
 
-          echo "Building English ARMv7 APK with Gradle..."
+          echo "Compiling registry_sync.cpp for armeabi-v7a..."
+          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang++ \
+            -shared -fPIC -O2 \
+            -std=c++17 \
+            -Wall -Wextra \
+            -llog \
+            -static-libstdc++ \
+            android/app/src/main/cpp/registry_sync.cpp \
+            -o android/app/src/main/jniLibs/armeabi-v7a/libregistry_sync.so
+
+          echo "Building translated ARMv7 APK with Gradle..."
           cd android
+          chmod +x gradlew
           ./gradlew assembleRelease -PnfsAbi=armeabi-v7a --no-daemon
           cd ..
 
@@ -186,12 +215,16 @@ jobs:
 
           echo "Aligning ARMv7 APK..."
           $BUILD_TOOLS_DIR/zipalign -p -f -v 4 "$UNSIGNED_APK" "$OUT_APK"
+          rm -f "$UNSIGNED_APK"
 
           echo "Signing ARMv7 APK..."
-          STORE_PASS="${{ secrets.KEYSTORE_PASSWORD || 'androidrelease' }}"
+          STORE_PASS="androidrelease"
+          if [ -n "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
+            STORE_PASS="${{ secrets.KEYSTORE_PASSWORD }}"
+          fi
           $BUILD_TOOLS_DIR/apksigner sign --ks release.jks --ks-pass pass:"$STORE_PASS" --key-pass pass:"$STORE_PASS" "$OUT_APK"
 
-          echo "Verifying ARMv7 APK..."
+          echo "Verifying signed ARMv7 APK..."
           $BUILD_TOOLS_DIR/apksigner verify "$OUT_APK"
 
       - name: Generate Checksums and Release Notes
@@ -237,8 +270,7 @@ jobs:
           name: "NFSU2 Android Evolved ${{ steps.release-check.outputs.upstream_tag }} (English Translation)"
           body_path: release_body.md
           files: |
-            NFSU2-AndroidEvolved-*-English-arm64.apk
-            NFSU2-AndroidEvolved-*-English-armeabi-v7a.apk
+            NFSU2-AndroidEvolved-*-English-*.apk
             NFSU2-*-English-SHA256SUMS.txt
           draft: false
           prerelease: false

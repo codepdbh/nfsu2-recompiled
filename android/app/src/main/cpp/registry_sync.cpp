@@ -17,6 +17,8 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+#if defined(__aarch64__)
+
 // Red-black tree node layout matching libnfsu2_android.so (LLVM libc++ 64-bit)
 struct NfsRegNode {
     NfsRegNode* left;       // 0x00
@@ -367,3 +369,12 @@ static void registry_sync_init() {
     pthread_create(&thread, nullptr, registry_sync_thread, nullptr);
     pthread_detach(thread);
 }
+
+#else
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nfsu2_androidevolved_GameActivity_nativeSyncSave(JNIEnv*, jclass) {
+    // 32-bit fallback stub
+}
+
+#endif
