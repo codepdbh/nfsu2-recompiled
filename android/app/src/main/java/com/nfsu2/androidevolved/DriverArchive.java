@@ -18,25 +18,25 @@ final class DriverArchive {
             ZipEntry entry;
             byte[] buffer = new byte[65536];
             while ((entry = zip.getNextEntry()) != null) {
-                if (++entries > 1024) throw new IOException("El ZIP contiene demasiados archivos.");
+                if (++entries > 1024) throw new IOException("ZIP archive contains too many files.");
                 String name = entry.getName();
                 File file = new File(root, name);
                 if (name.startsWith("/") || name.contains("\\") || name.contains(":") || name.split("/").length > 32 ||
                         !file.getCanonicalPath().startsWith(prefix) || !seen.add(file.getCanonicalPath()))
-                    throw new IOException("El ZIP contiene rutas no válidas o repetidas.");
+                    throw new IOException("ZIP contains invalid or duplicate paths.");
                 if (entry.isDirectory()) {
-                    if (!file.isDirectory() && !file.mkdirs()) throw new IOException("No se pudo crear la carpeta.");
+                    if (!file.isDirectory() && !file.mkdirs()) throw new IOException("Could not create directory.");
                     continue;
                 }
                 if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs())
-                    throw new IOException("No se pudo crear la carpeta.");
+                    throw new IOException("Could not create directory.");
                 long size = 0;
                 try (FileOutputStream output = new FileOutputStream(file)) {
                     int n;
                     while ((n = zip.read(buffer)) != -1) {
                         size += n; total += n;
                         if (size > LIMIT / 2 || total > LIMIT || (file.getName().equals("meta.json") && size > 65536))
-                            throw new IOException("El paquete de driver es demasiado grande.");
+                            throw new IOException("Driver package is too large.");
                         output.write(buffer, 0, n);
                     }
                 }
@@ -49,13 +49,13 @@ final class DriverArchive {
         try (DataInputStream input = new DataInputStream(new FileInputStream(library))) { input.readFully(h); }
         if (h[0] != 127 || h[1] != 'E' || h[2] != 'L' || h[3] != 'F' || h[4] != 2 || h[5] != 1 ||
                 h[16] != 3 || h[17] != 0 || (h[18] & 255) != 183 || h[19] != 0)
-            throw new IOException("El driver debe ser una biblioteca Android ARM64 (.so), no de PC ni de 32 bits.");
+            throw new IOException("Driver must be an Android ARM64 library (.so), not PC or 32-bit.");
     }
 
     static void delete(File file) throws IOException {
-        if (Files.isSymbolicLink(file.toPath())) throw new IOException("Enlace inesperado en el paquete.");
+        if (Files.isSymbolicLink(file.toPath())) throw new IOException("Unexpected symbolic link in package.");
         File[] children = file.listFiles();
         if (children != null) for (File child : children) delete(child);
-        if (file.exists() && !file.delete()) throw new IOException("No se pudo eliminar " + file.getName());
+        if (file.exists() && !file.delete()) throw new IOException("Could not delete " + file.getName());
     }
 }

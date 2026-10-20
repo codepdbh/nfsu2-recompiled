@@ -2,3 +2,4 @@
 **/build/
 **/.cxx/
 local.properties
+**/jniLibs/
