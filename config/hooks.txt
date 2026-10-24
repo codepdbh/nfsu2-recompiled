@@ -2,6 +2,8 @@
 # src/runtime/widescreen.c). Each replaces one patch of the NFSU2 WidescreenFix
 # (ThirteenAG), found by that mod's byte patterns; every site is inside a block,
 # never a branch target (checked against work/catalog.json).
+# Sites of the documented SPEED2.EXE (README "Tested Game Build"). Other builds
+# have their own table: config/hooks-<build>.txt, chosen with NFSU2_EXE_BUILD.
 # VA        purpose
 0x0051B3CF  HUD anchor X after mov [esp+A0h], 320.0
 0x005368DC  HUD anchor X after mov [esp+74h], 320.0

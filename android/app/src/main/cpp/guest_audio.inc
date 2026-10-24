@@ -25,22 +25,44 @@ aaudio_data_callback_result_t soundCallback(AAudioStream*,void*,void* data,int32
     while(us>peak&&!soundCallbackPeakUs.compare_exchange_weak(peak,us,std::memory_order_relaxed)){}
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
-bool startSoundStream(){
-    if(soundStream)return true;AAudioStreamBuilder* builder=nullptr;
-    if(AAudio_createStreamBuilder(&builder)!=AAUDIO_OK)return false;
+// Output buffer: 40 ms, grown to 100 ms after reported underruns. Two bursts
+// (4-10 ms on MediaTek, Exynos and Unisoc low-latency streams) were all a
+// render or guest-lock hiccup needed to break the sound on busy low-end
+// phones, and those drivers report no xruns, so the old grow-on-xrun rule
+// never fired. A racing game does not need lower latency than this.
+constexpr int32_t soundTargetMs=40,soundMaximumMs=100;
+AAudioStream* openSoundStream(aaudio_performance_mode_t mode){
+    AAudioStreamBuilder* builder=nullptr;
+    if(AAudio_createStreamBuilder(&builder)!=AAUDIO_OK)return nullptr;
     AAudioStreamBuilder_setDirection(builder,AAUDIO_DIRECTION_OUTPUT);
     AAudioStreamBuilder_setFormat(builder,AAUDIO_FORMAT_PCM_FLOAT);
     AAudioStreamBuilder_setChannelCount(builder,2);
     AAudioStreamBuilder_setSharingMode(builder,AAUDIO_SHARING_MODE_SHARED);
-    AAudioStreamBuilder_setPerformanceMode(builder,AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    AAudioStreamBuilder_setPerformanceMode(builder,mode);
+    AAudioStreamBuilder_setBufferCapacityInFrames(builder,48000*soundMaximumMs/1000);
     AAudioStreamBuilder_setDataCallback(builder,soundCallback,nullptr);
-    auto status=AAudioStreamBuilder_openStream(builder,&soundStream);AAudioStreamBuilder_delete(builder);
-    if(status!=AAUDIO_OK){soundStream=nullptr;return false;}
+    AAudioStream* stream=nullptr;
+    auto status=AAudioStreamBuilder_openStream(builder,&stream);AAudioStreamBuilder_delete(builder);
+    return status==AAUDIO_OK?stream:nullptr;
+}
+int32_t soundFrames(int32_t milliseconds){
+    int32_t frames=int32_t(soundMixer.rate)*milliseconds/1000,burst=AAudioStream_getFramesPerBurst(soundStream);
+    if(burst>0)frames=(frames+burst-1)/burst*burst;
+    return std::min(frames,AAudioStream_getBufferCapacityInFrames(soundStream));
+}
+bool startSoundStream(){
+    if(soundStream)return true;
+    soundStream=openSoundStream(AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    // Some MediaTek low-latency streams cap the buffer at two bursts (512 frames).
+    if(soundStream&&AAudioStream_getBufferCapacityInFrames(soundStream)<AAudioStream_getSampleRate(soundStream)*soundTargetMs/1000){
+        if(AAudioStream* fallback=openSoundStream(AAUDIO_PERFORMANCE_MODE_NONE)){AAudioStream_close(soundStream);soundStream=fallback;}
+    }
+    if(!soundStream)soundStream=openSoundStream(AAUDIO_PERFORMANCE_MODE_NONE);
+    if(!soundStream)return false;
     soundMixer.rate=unsigned(AAudioStream_getSampleRate(soundStream));
-    int32_t burst=AAudioStream_getFramesPerBurst(soundStream);
-    if(burst>0)AAudioStream_setBufferSizeInFrames(soundStream,burst*2);
+    AAudioStream_setBufferSizeInFrames(soundStream,soundFrames(soundTargetMs));
     soundLastXruns=0;soundCallbackPeakUs=0;
-    status=AAudioStream_requestStart(soundStream);
+    auto status=AAudioStream_requestStart(soundStream);
     if(status!=AAUDIO_OK){AAudioStream_close(soundStream);soundStream=nullptr;return false;}
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","AAudio stereo float stream started: %u Hz",soundMixer.rate);return true;
 }
@@ -50,8 +72,8 @@ void serviceGuestSound(){
     if(!soundStream)return;
     int32_t xruns=AAudioStream_getXRunCount(soundStream),burst=AAudioStream_getFramesPerBurst(soundStream);
     int32_t size=AAudioStream_getBufferSizeInFrames(soundStream),capacity=AAudioStream_getBufferCapacityInFrames(soundStream);
-    if(xruns>soundLastXruns&&burst>0&&size<capacity&&size<burst*8)
-        AAudioStream_setBufferSizeInFrames(soundStream,std::min({size+burst,capacity,burst*8}));
+    if(xruns>soundLastXruns&&burst>0&&size<soundFrames(soundMaximumMs))
+        AAudioStream_setBufferSizeInFrames(soundStream,std::min(size+burst,soundFrames(soundMaximumMs)));
     if(xruns>=0)soundLastXruns=xruns;
     uint64_t clipped;float peak;unsigned active=0;double publishGapMs=0,ringMs=0;
     {std::lock_guard<std::mutex> lock(soundMixer.mutex);
@@ -152,8 +174,8 @@ void soundDispatch(){
         if(second&&(!arg(5)||!arg(6))){ret(0x80070057,8);return;}
         object.locked=true;object.lockOffset=offset;object.lockBytes=length;
         write32(arg(3),object.guestSamples+offset);write32(arg(4),first);if(arg(5))write32(arg(5),second?object.guestSamples:0);if(arg(6))write32(arg(6),second);ret(0,8);return;}
-    case 12:{if(arg(1)||arg(2)||arg(3)&~1u){ret(0x80070057,4);return;}std::lock_guard<std::mutex> lock(soundMixer.mutex);voice->loop=arg(3)&1;voice->playing=true;ret(0,4);return;}
-    case 13:{if(arg(1)>=voice->samples.size()||arg(1)%voice->block()){ret(0x80070057,2);return;}std::lock_guard<std::mutex> lock(soundMixer.mutex);voice->position=arg(1)/voice->block();ret(0,2);return;}
+    case 12:{if(arg(1)||arg(2)||arg(3)&~1u){ret(0x80070057,4);return;}std::lock_guard<std::mutex> lock(soundMixer.mutex);voice->loop=arg(3)&1;voice->playing=true;voice->staleFrames=0;ret(0,4);return;}
+    case 13:{if(arg(1)>=voice->samples.size()||arg(1)%voice->block()){ret(0x80070057,2);return;}std::lock_guard<std::mutex> lock(soundMixer.mutex);voice->position=arg(1)/voice->block();voice->staleFrames=0;ret(0,2);return;}
     case 14:{if(!(object.flags&1)){ret(0x80070057,2);return;}std::lock_guard<std::mutex> lock(soundMixer.mutex);ret(soundFormat(arg(1),*voice)?0:soundBadFormat,2);return;}
     case 15:case 16:{int32_t value=int32_t(arg(1));if(value < -10000||value>(method==15?0:10000)){ret(0x80070057,2);return;}
         std::lock_guard<std::mutex> lock(soundMixer.mutex);if(method==15)object.volume=arg(1);else object.pan=arg(1);
@@ -168,7 +190,8 @@ void soundDispatch(){
         // overwrite samples still being played with a stale copy.
         {std::lock_guard<std::mutex> lock(soundMixer.mutex);
             std::memcpy(voice->samples.data()+object.lockOffset,ptr(object.guestSamples+object.lockOffset,first),first);
-            if(second)std::memcpy(voice->samples.data(),ptr(object.guestSamples,second),second);}
+            if(second)std::memcpy(voice->samples.data(),ptr(object.guestSamples,second),second);
+            voice->published();}
         auto published=std::chrono::steady_clock::now();
         if(object.lastPublish!=std::chrono::steady_clock::time_point{})object.maxPublishGap=std::max(object.maxPublishGap,
             std::chrono::duration_cast<std::chrono::microseconds>(published-object.lastPublish));

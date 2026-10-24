@@ -1,0 +1,27 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Need for Speed: Underground 2",
+  "system": "PC (Windows)",
+  "type": "recomp",
+  "project": "NFS Underground 2 Android Evolved",
+  "status": "released",
+  "targets": [
+    "Android",
+    "Windows"
+  ],
+  "approach": "Static x86-to-C recompilation with pcrecomp; Win32 compatibility runtime and Direct3D 9 through DXVK/Vulkan on Android.",
+  "maintainers": [
+    {
+      "name": "codepdbh",
+      "link": "https://github.com/codepdbh"
+    }
+  ],
+  "notes": "Public ARM64 and ARMv7 Android builds with touch controls, gamepad support and graphics settings. Original PC game data required. Compatibility and performance fixes remain in development.",
+  "toolchain": "Pcrecomp",
+  "links": [
+    {
+      "label": "Upstream project",
+      "url": "https://github.com/sp00nznet/pcrecomp"
+    }
+  ]
+}

@@ -107,7 +107,10 @@ def cmd_lift(exe, catalog, outdir, split=400, names_path=None, prefix=""):
     cfg = os.path.join(HERE, "..", "config")
     overrides = read_va_list(os.path.join(cfg, "overrides.txt"))
     excluded = read_va_list(os.path.join(cfg, "exclude.txt"))
-    hooks = read_va_list(os.path.join(cfg, "hooks.txt"))
+    # Each SPEED2.EXE build has its own hook sites (config/hooks-<build>.txt);
+    # NFSU2_EXE_BUILD selects one, the documented build uses hooks.txt.
+    build = os.environ.get("NFSU2_EXE_BUILD", "")
+    hooks = read_va_list(os.path.join(cfg, f"hooks-{build}.txt" if build else "hooks.txt"))
     md = Cs(CS_ARCH_X86, CS_MODE_32)
     md.detail = True
     lifter = Lifter(iat_map=iat, func_names={}, lifted=lifted, precise_carry=True,

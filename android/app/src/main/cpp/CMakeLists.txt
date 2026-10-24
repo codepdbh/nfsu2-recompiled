@@ -94,7 +94,15 @@ add_library(nfsu2_android SHARED main.cpp guest_runtime.cpp d3d9_bridge.cpp vulk
 target_include_directories(nfsu2_android SYSTEM PRIVATE "${DXVK_SOURCE}/include/native"
   "${DXVK_SOURCE}/include/native/windows" "${DXVK_SOURCE}/include/native/directx")
 target_include_directories(nfsu2_android PRIVATE "${PCRECOMP}/runtime/recomp32" "${PCRECOMP}/runtime/win32hle" "${NFS_ROOT}/src/runtime")
-target_compile_definitions(nfsu2_android PRIVATE RECOMP_STRICT_ICALL RECOMP_X87_WINDOW)
+# SPEED2.EXE build the generated code was lifted from (scripts/run_lift.py reads
+# the same NFSU2_EXE_BUILD environment variable). Empty = the documented build.
+set(NFSU2_EXE_BUILD "$ENV{NFSU2_EXE_BUILD}" CACHE STRING "SPEED2.EXE build of the lifted code (empty or f4bb0d99)")
+if(NFSU2_EXE_BUILD STREQUAL "f4bb0d99")
+  set(EXE_BUILD_DEFS NFSU2_EXE_F4BB0D99)
+elseif(NOT NFSU2_EXE_BUILD STREQUAL "")
+  message(FATAL_ERROR "Unknown NFSU2_EXE_BUILD '${NFSU2_EXE_BUILD}': add config/hooks-<build>.txt and its table in src/runtime/widescreen.c")
+endif()
+target_compile_definitions(nfsu2_android PRIVATE RECOMP_STRICT_ICALL RECOMP_X87_WINDOW ${EXE_BUILD_DEFS})
 if(SERVER_GEN_SOURCES)
     target_compile_definitions(nfsu2_android PRIVATE NFS_SERVER_DLL)
 endif()

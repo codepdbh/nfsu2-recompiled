@@ -422,6 +422,9 @@ public final class LauncherActivity extends Activity {
             org.json.JSONObject gpu = new org.json.JSONObject(report);
             boolean failed = gpu.optBoolean("driverLoadFailed") || gpu.has("probeError");
             if (playAfterProbe && !failed && gpu.optBoolean("compatible")) { playAfterProbe = false; launch(); return; }
+            // The player pressed PLAY: a driver that loads but lacks a feature the
+            // probe checks may still run the game (issue #1107), so offer it.
+            boolean wantedToPlay = playAfterProbe && !failed;
             playAfterProbe = false;
             String text = failed ? "Не удалось использовать драйвер: " + gpu.optString("probeError", "ошибка инициализации Vulkan.")
                     : "GPU: " + gpu.optString("gpu") + "\nVulkan: " + gpu.optString("vulkan")
@@ -434,6 +437,7 @@ public final class LauncherActivity extends Activity {
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                     .setTitle("Тест драйвера Vulkan").setMessage(text).setPositiveButton("ОК", null)
                     .setNeutralButton("Использовать системный драйвер", (dialog, which) -> { GpuDrivers.select(this, ""); refreshOptions(); })
+                    .setNegativeButton(wantedToPlay ? "Играть всё равно" : null, wantedToPlay ? (dialog, which) -> launch() : null)
                     .show();
         } catch (Exception error) { message("Тест драйвера Vulkan", "Некорректная диагностика: " + error.getMessage()); }
     }

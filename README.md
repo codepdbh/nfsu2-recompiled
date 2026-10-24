@@ -3,12 +3,12 @@
 
 ### Android downloads / Descargas Android
 
-[Underground 2 v0.14.8](https://github.com/codepdbh/nfsu2-recompiled/releases/tag/v0.14.8)
+[Underground 2 v0.14.9](https://github.com/codepdbh/nfsu2-recompiled/releases/tag/v0.14.9)
 
-| APK                                                                                                                                    | Architecture                                          |
-|----------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
-| [ARM64 / 64 bits](https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.8/NFSU2-AndroidEvolved-v0.14.8-arm64.apk)       | arm64-v8a, рекомендуется                                |
-| [ARMv7 / 32 bits](https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.8/NFSU2-AndroidEvolved-v0.14.8-armeabi-v7a.apk) | armeabi-v7a; требуется Android с поддержкой 32-битных приложений |
+| APK | Architecture |
+|---|---|
+| [ARM64 / 64 bits](https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.9/NFSU2-AndroidEvolved-v0.14.9-arm64.apk) | arm64-v8a, рекомендуется |
+| [ARMv7 / 32 bits](https://github.com/codepdbh/nfsu2-recompiled/releases/download/v0.14.9/NFSU2-AndroidEvolved-v0.14.9-armeabi-v7a.apk) | armeabi-v7a; требуется Android с поддержкой 32-битных приложений |
 
 Android 10+ и Vulkan 1.1+. Оба APK используют один и тот же пакет и ключ подписи;
 устанавливайте архитектуру, поддерживаемую вашим устройством. Требуются оригинальные файлы игры.
@@ -138,6 +138,8 @@ Android 10+ и Vulkan 1.1+. Оба APK используют один и тот �
 
 *Подробности о бинарнике см. в [docs/NFSU2_BINARY_REPORT.md](docs/NFSU2_BINARY_REPORT.md).*
 
+**Other SPEED2.EXE builds.** Widescreen hooks are tied to the exact code of the lifted executable. The default table (`config/hooks.txt`) is for the build above. The build with SHA-1 `f4bb0d99…` used by the R36S port has its own table (`config/hooks-f4bb0d99.txt`): set `NFSU2_EXE_BUILD=f4bb0d99` both when lifting (`scripts/run_lift.py`) and when building (CMake reads the same variable). A different build needs its own `config/hooks-<build>.txt` and table in `src/runtime/widescreen.c`.
+
 ---
 
 ## Требования
@@ -233,6 +235,17 @@ scripts/run.sh [--fullscreen]
 | **0009** | Явная обработка знака для знаковых условий (исправлен краш при загрузке гонки и рендеринг машин) |
 | **0010** | `RECOMP_NATIVE_RANGE`: выборочное гибридное бисекционное выполнение относительно оригинального кода |
 | **0011** | Потокобезопасное сохранение xmm/mxcsr и гостевых флагов CPU на каждый гостевой поток |
+
+---
+
+## Контрибьюторы
+
+| Контрибьютор | Вклад |
+|---|---|
+| [codepdbh](https://github.com/codepdbh) | Статическая рекомпиляция, хост под Windows, порт на Android и лаунчер |
+| [Manuel Peña (manuelpllull)](https://github.com/manuelpllull) | Порт под портативку R36S ([nfsu2-recompiled-r36s](https://github.com/manuelpllull/nfsu2-recompiled-r36s)) и доработка хуков широкоэкранного режима |
+
+Пул-реквесты с вкладом приветствуются.
 
 ---
 

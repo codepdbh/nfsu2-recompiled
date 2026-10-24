@@ -54,7 +54,15 @@ add_executable(NFSU2-Recompiled
   ${RT}/recomp32/image_loader.c
   ${RT}/recomp32/recomp_trace.c
   $<TARGET_OBJECTS:nfs_gen>)
-target_compile_definitions(NFSU2-Recompiled PRIVATE ${COMMON_DEFS})
+# SPEED2.EXE build the generated code was lifted from (scripts/run_lift.py reads
+# the same NFSU2_EXE_BUILD environment variable). Empty = the documented build.
+set(NFSU2_EXE_BUILD "$ENV{NFSU2_EXE_BUILD}" CACHE STRING "SPEED2.EXE build of the lifted code (empty or f4bb0d99)")
+if(NFSU2_EXE_BUILD STREQUAL "f4bb0d99")
+  set(EXE_BUILD_DEFS NFSU2_EXE_F4BB0D99)
+elseif(NOT NFSU2_EXE_BUILD STREQUAL "")
+  message(FATAL_ERROR "Unknown NFSU2_EXE_BUILD '${NFSU2_EXE_BUILD}': add config/hooks-<build>.txt and its table in src/runtime/widescreen.c")
+endif()
+target_compile_definitions(NFSU2-Recompiled PRIVATE ${COMMON_DEFS} ${EXE_BUILD_DEFS})
 target_include_directories(NFSU2-Recompiled PRIVATE ${COMMON_INC})
 target_compile_options(NFSU2-Recompiled PRIVATE /W3 /Zi)
 set_source_files_properties(src/host/main.c src/runtime/nfs_runtime.c src/runtime/overrides.c src/runtime/widescreen.c

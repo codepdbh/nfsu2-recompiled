@@ -13,6 +13,16 @@ struct PcmVoice {
     double position=0;
     float left=1,right=1;
     bool playing=false,loop=false;
+    // Streaming: a looping buffer the guest rewrites while it plays (music,
+    // speech, the engine mix). Frames played since the last rewrite; once that
+    // passes the whole ring the guest is not keeping up (loading screens hold
+    // the machine) and the ring would repeat its last half second until it
+    // resumes, so it is muted instead. Loops written once (sound effects) never
+    // become streaming and keep looping.
+    unsigned publishes=0;
+    double staleFrames=0;
+    bool streaming()const{return loop&&publishes>=4;}
+    void published(){staleFrames=0;if(playing)++publishes;}
     unsigned block()const{return channels*(bits/8);}
 };
 class PcmMixer {
@@ -46,6 +56,11 @@ public:
             if(!voice||!voice->playing||voice->samples.empty())continue;
             size_t count=voice->samples.size()/voice->block();if(!count)continue;
             double step=double(voice->frequency)/rate;
+            if(voice->streaming()&&voice->staleFrames>=double(count)){
+                voice->position=std::fmod(voice->position+step*frames,double(count));
+                continue;
+            }
+            voice->staleFrames+=step*frames;
             for(unsigned frame=0;frame<frames;++frame){
                 if(voice->position>=count){if(voice->loop)voice->position=std::fmod(voice->position,double(count));else{voice->playing=false;voice->position=0;break;}}
                 size_t a=size_t(voice->position),b=a+1;float fraction=float(voice->position-a);

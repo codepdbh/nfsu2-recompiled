@@ -28,6 +28,10 @@ uintptr_t windowGeneration=0x1000;
 HWND currentHandle=nullptr;
 uint32_t screenWidth=1280,screenHeight=720;
 uint32_t renderWidth=0,renderHeight=0;
+// Buffer size set on the current window by resizeWindow (D3D9 Reset), 0 = the
+// window's own size. The swap chain must use it: a screen-sized swap chain on
+// smaller buffers is cropped to their top-left corner by Android.
+uint32_t bufferWidth=0,bufferHeight=0;
 HMONITOR monitor(){return reinterpret_cast<HMONITOR>(uintptr_t{1});}
 // The Vulkan driver DXVK talks to: the linked system loader, or an imported
 // adrenotools driver chosen in the launcher (set before the device exists).
@@ -37,7 +41,13 @@ extern "C" void dxvkAndroidSetInstanceProcAddr(PFN_vkGetInstanceProcAddr entry){
 extern "C" PFN_vkGetInstanceProcAddr dxvkAndroidGetInstanceProcAddr(){
     auto entry=instanceProcAddr.load();return entry?entry:vkGetInstanceProcAddr;
 }
-extern "C" void dxvkAndroidSetRenderSize(uint32_t width,uint32_t height){std::lock_guard<std::mutex> guard(windowMutex);renderWidth=width;renderHeight=height;}
+extern "C" void dxvkAndroidSetRenderSize(uint32_t width,uint32_t height){std::lock_guard<std::mutex> guard(windowMutex);renderWidth=width;renderHeight=height;
+#ifdef __ANDROID__
+    // Same as dxvkAndroidSetWindow when the window came first.
+    if(currentWindow&&!bufferWidth&&width&&height&&width<screenWidth&&height<screenHeight&&
+       ANativeWindow_setBuffersGeometry(currentWindow,width,height,0)==0){bufferWidth=width;bufferHeight=height;}
+#endif
+}
 extern "C" HWND dxvkAndroidGetWindowHandle(){std::lock_guard<std::mutex> guard(windowMutex);return currentHandle;}
 extern "C" void dxvkAndroidSetWindow(ANativeWindow* window){
     std::lock_guard<std::mutex> guard(windowMutex);
@@ -46,8 +56,13 @@ extern "C" void dxvkAndroidSetWindow(ANativeWindow* window){
     if(window){ANativeWindow_acquire(window);screenWidth=ANativeWindow_getWidth(window);screenHeight=ANativeWindow_getHeight(window);}
     if(currentWindow)ANativeWindow_release(currentWindow);
 #endif
-    currentWindow=window;
+    currentWindow=window;bufferWidth=bufferHeight=0;
 #ifdef __ANDROID__
+    // Below native resolution, present at the render size and let the Android
+    // compositor scale the surface: the swap chain blit no longer writes a
+    // full-screen image every frame (Adreno 610: 2.5 MB per frame at 2340x1080).
+    if(window&&renderWidth&&renderHeight&&renderWidth<screenWidth&&renderHeight<screenHeight&&
+       ANativeWindow_setBuffersGeometry(window,renderWidth,renderHeight,0)==0){bufferWidth=renderWidth;bufferHeight=renderHeight;}
     currentHandle=window?reinterpret_cast<HWND>(++windowGeneration):nullptr;
 #else
     currentHandle=window;
@@ -110,10 +125,10 @@ bool getDisplayMode(HMONITOR handle,uint32_t index,WsiMode* mode){
     auto sizes=androidRenderModes(screenWidth,screenHeight,renderWidth?renderWidth:screenWidth,renderHeight?renderHeight:screenHeight);
     *mode={sizes[index].width,sizes[index].height,{60,1},32,false};return true;
 }
-void getWindowSize(HWND window,uint32_t* width,uint32_t* height){std::lock_guard<std::mutex> guard(windowMutex);bool valid=currentWindow&&window==currentHandle;if(width)*width=valid?screenWidth:0;if(height)*height=valid?screenHeight:0;}
+void getWindowSize(HWND window,uint32_t* width,uint32_t* height){std::lock_guard<std::mutex> guard(windowMutex);bool valid=currentWindow&&window==currentHandle;if(width)*width=valid?(bufferWidth?bufferWidth:screenWidth):0;if(height)*height=valid?(bufferHeight?bufferHeight:screenHeight):0;}
 void resizeWindow(HWND window,DxvkWindowState*,uint32_t width,uint32_t height){std::lock_guard<std::mutex> guard(windowMutex);
 #ifdef __ANDROID__
-if(currentWindow&&window==currentHandle)ANativeWindow_setBuffersGeometry(currentWindow,width,height,0);
+if(currentWindow&&window==currentHandle&&ANativeWindow_setBuffersGeometry(currentWindow,width,height,0)==0){bufferWidth=width;bufferHeight=height;}
 #else
 (void)window;(void)width;(void)height;
 #endif
