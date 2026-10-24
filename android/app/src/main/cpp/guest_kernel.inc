@@ -279,6 +279,52 @@ struct RegistryValue {uint32_t type;std::vector<uint8_t> bytes;};
 std::map<std::string,RegistryValue> gameRegistry;
 std::map<uint32_t,bool> registryHandles;
 uint32_t nextRegistryHandle=0xf0050000;
+// The game's settings survive restarts in <game root>/registry.ini: name=123 (DWORD) or name="text".
+std::string registryIniPath(){return std::string(kGameRoot)+"/registry.ini";}
+// Set by the launcher on every start, never taken from the file.
+bool registryManagedKey(const std::string& name){return name=="install dir"||name=="language";}
+void loadGameRegistry(){
+    FILE* file=std::fopen(registryIniPath().c_str(),"r");if(!file)return;
+    char line[512];unsigned loaded=0;
+    while(std::fgets(line,sizeof line,file)){
+        std::string text(line);
+        while(!text.empty()&&(text.back()=='\n'||text.back()=='\r'||text.back()==' '))text.pop_back();
+        auto equals=text.find('=');
+        if(text.empty()||text[0]=='#'||text[0]==';'||text[0]=='['||equals==std::string::npos)continue;
+        auto name=lower(text.substr(0,equals));auto value=text.substr(equals+1);
+        if(name.empty()||registryManagedKey(name))continue;
+        if(value.size()>=2&&value.front()=='"'&&value.back()=='"'){
+            value=value.substr(1,value.size()-2);
+            std::vector<uint8_t> bytes(value.begin(),value.end());bytes.push_back(0);
+            gameRegistry[name]=RegistryValue{1,std::move(bytes)};
+        }else{
+            char* end=nullptr;unsigned long number=std::strtoul(value.c_str(),&end,0);
+            if(end==value.c_str())continue;
+            uint32_t dword=uint32_t(number);std::vector<uint8_t> bytes(4);std::memcpy(bytes.data(),&dword,4);
+            gameRegistry[name]=RegistryValue{4,std::move(bytes)};
+        }
+        ++loaded;
+    }
+    std::fclose(file);
+    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Registry: %u values loaded from %s",loaded,registryIniPath().c_str());
+}
+void saveGameRegistry(){
+    const auto path=registryIniPath(),temporary=path+".tmp";
+    FILE* file=std::fopen(temporary.c_str(),"w");
+    if(!file){NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Registry: cannot write %s",temporary.c_str());return;}
+    std::fputs("# NFSU2 Android Evolved - game registry\n[Registry]\n",file);
+    for(const auto& [name,value]:gameRegistry){
+        if(registryManagedKey(name)||name.find('=')!=std::string::npos)continue;
+        if(value.type==4&&value.bytes.size()>=4){
+            uint32_t dword;std::memcpy(&dword,value.bytes.data(),4);std::fprintf(file,"%s=%u\n",name.c_str(),dword);
+        }else if(value.type==1){
+            std::string text(value.bytes.begin(),value.bytes.end());text=text.substr(0,text.find('\0'));
+            if(text.find_first_of("\r\n")==std::string::npos)std::fprintf(file,"%s=\"%s\"\n",name.c_str(),text.c_str());
+        }
+    }
+    if(std::fclose(file)!=0||std::rename(temporary.c_str(),path.c_str())!=0)
+        NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Registry: cannot save %s",path.c_str());
+}
 void registryOpen(uint32_t output,uint32_t argc){
     auto key=lower(guestString(arg(1)));
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Registry open %08x\\%s",arg(0),key.c_str());
@@ -288,6 +334,7 @@ void registryOpen(uint32_t output,uint32_t argc){
     if(gameRegistry.empty()){
         const char path[]="C:\\nfsu2\\";gameRegistry.emplace("install dir",RegistryValue{1,{std::begin(path),std::end(path)}});
         auto language=guestLanguage;language.push_back('\0');gameRegistry.emplace("language",RegistryValue{1,{language.begin(),language.end()}});
+        loadGameRegistry();
     }
     uint32_t handle=nextRegistryHandle++;registryHandles.emplace(handle,true);write32(output,handle);ret(0,argc);
 }
@@ -306,7 +353,7 @@ void regSetValueExA(){
     if(!registryHandles.count(arg(0))){ret(6,6);return;}
     uint32_t size=arg(5);if(size>1048576){ret(87,6);return;}
     RegistryValue value{arg(3),std::vector<uint8_t>(size)};if(size)std::memcpy(value.bytes.data(),ptr(arg(4),size),size);
-    gameRegistry[lower(guestString(arg(1)))]=std::move(value);ret(0,6);
+    gameRegistry[lower(guestString(arg(1)))]=std::move(value);saveGameRegistry();ret(0,6);
 }
 #include "guest_charset.inc"
 #include "guest_resources.inc"

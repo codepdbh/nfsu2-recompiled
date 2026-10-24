@@ -27,7 +27,6 @@ import android.util.DisplayMetrics;
 /** Storage permission gateway for the fixed Internal storage/nfsu2 directory. */
 public final class GameActivity extends NativeActivity {
     static {
-        System.loadLibrary("registry_sync");
         System.loadLibrary("nfsu2_android");
     }
     private boolean requested;
@@ -40,7 +39,6 @@ public final class GameActivity extends NativeActivity {
     private Runnable statusHideTask;
     private static native void nativeKey(int scan, boolean down);
     private static native boolean nativeDrivingControls();
-    private static native void nativeSyncSave();
     private static native boolean nativeGamepadUsed();
     private final boolean[] touchKeys=new boolean[256],sentKeys=new boolean[256];
     private boolean tiltLeft,tiltRight,tiltEnabled,tiltCalibrate=true;
@@ -299,7 +297,6 @@ public final class GameActivity extends NativeActivity {
     }
     @Override protected void onPause() {
         foreground=false;
-        nativeSyncSave();
         holdLanBroadcasts(false);
         updateTiltSensor();
         if(inputManager!=null)inputManager.unregisterInputDeviceListener(gamepadListener);
@@ -336,7 +333,6 @@ public final class GameActivity extends NativeActivity {
         if (code == 1 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) recreate();
     }
     @Override protected void onDestroy() {
-        nativeSyncSave();
         super.onDestroy();
         // Each launch uses a fresh guest machine in the dedicated :game process.
         android.os.Process.killProcess(android.os.Process.myPid());
