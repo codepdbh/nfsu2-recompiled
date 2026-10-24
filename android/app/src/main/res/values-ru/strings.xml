@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NFSU2 Android Evolved</string>
+    <string name="launcher_subtitle">PC · нативно перекомпилировано для Android</string>
+    <string name="launcher_game_files">ФАЙЛЫ ИГРЫ</string>
+    <string name="launcher_play">ИГРАТЬ</string>
+    <string name="launcher_allow_storage_access">Разрешить доступ к внутренней памяти/nfsu2</string>
+    <string name="launcher_options">НАСТРОЙКИ</string>
+    <string name="launcher_options_apply_on_play">Применяются при нажатии «ИГРАТЬ».</string>
+    <string name="launcher_game_folders">Папки игры</string>
+    <string name="launcher_missing_folders">Отсутствуют папки: %1$s</string>
+    <string name="launcher_widescreen_hud">Широкоэкранный HUD (scripts/…WidescreenFix.dat)</string>
+    <string name="launcher_status_allow_access">Разрешите доступ к файлам, чтобы читать внутреннюю память/nfsu2.</string>
+    <string name="launcher_status_game_root">Внутренняя память/nfsu2</string>
+    <string name="launcher_status_copy_files">Скопируйте файлы игры во внутреннюю память/nfsu2.</string>
+    <string name="launcher_optional_suffix"> · необязательно</string>
+
+    <string name="common_ok">ОК</string>
+    <string name="common_cancel">Отмена</string>
+    <string name="common_back">Назад</string>
+    <string name="common_save">Сохранить</string>
+    <string name="common_restore">Восстановить</string>
+
+    <string name="updated_title">Обновлено до версии %1$s!</string>
+    <string name="loading_whats_new">Загружаем список изменений…</string>
+    <string name="view_on_github">Открыть на GitHub</string>
+    <string name="whats_new_unavailable">Не удалось загрузить список изменений (нет сети или релиз ещё не опубликован). Его можно посмотреть на GitHub.</string>
+    <string name="crash_title">Игра закрылась</string>
+    <string name="crash_prompt">%1$s.\n\nОтправить полный журнал на GitHub, чтобы проблему можно было исправить?</string>
+    <string name="report_on_github">Сообщить на GitHub</string>
+    <string name="not_now">Не сейчас</string>
+
+    <string name="interface_language">Язык интерфейса</string>
+    <string name="interface_language_system">Как в системе</string>
+    <string name="interface_language_legacy_message">На Android 12 и более ранних версиях язык лаунчера совпадает с языком устройства. Измените язык устройства в системных настройках.</string>
+    <string name="vulkan_driver">Драйвер Vulkan</string>
+    <string name="system_driver">Системный</string>
+    <string name="test_driver">Проверить драйвер</string>
+    <string name="gpu_and_vulkan_features">GPU и возможности Vulkan</string>
+    <string name="game_language">Язык игры</string>
+    <string name="no_game_languages_found">В папке внутренняя память/nfsu2/LANGUAGES не найдено доступных языков.</string>
+    <string name="reset_graphics_cache">Сбросить графический кэш</string>
+    <string name="regenerate_shaders">Пересобрать шейдеры</string>
+    <string name="online_server">Онлайн-сервер</string>
+    <string name="check_updates">Проверить обновления</string>
+    <string name="checking_github">Проверяем GitHub…</string>
+    <string name="version_label">Версия %1$s</string>
+    <string name="report_problem">Сообщить о проблеме</string>
+    <string name="full_log_to_github">Полный журнал на GitHub</string>
+
+    <string name="online_server_description">Онлайн-режим игры (EA Nation) подключается к этому серверу сообщества вместо закрытых серверов EA.</string>
+    <string name="online_server_invalid">«%1$s» — недопустимое имя сервера.</string>
+    <string name="system_vulkan_driver">Системный драйвер</string>
+    <string name="import_zip">Импортировать ZIP</string>
+    <string name="remove_selected">Удалить выбранный</string>
+
+    <string name="driver_test_title">Проверка драйвера Vulkan</string>
+    <string name="driver_test_failed">Не удалось использовать драйвер: %1$s</string>
+    <string name="driver_test_start_error">Не удалось запустить Vulkan.</string>
+    <string name="driver_report_gpu">GPU: %1$s</string>
+    <string name="driver_report_vulkan">Vulkan: %1$s</string>
+    <string name="driver_report_driver">Драйвер: %1$s %2$s</string>
+    <string name="driver_report_bc_gpu">BC-текстуры: обрабатываются на GPU</string>
+    <string name="driver_report_bc_cpu">BC-текстуры: преобразуются на CPU</string>
+    <string name="driver_report_vertex_missing">Неподдерживаемые типы вершин: %1$s</string>
+    <string name="driver_report_compatible">Совместимо с игрой.</string>
+    <string name="driver_report_missing">Не хватает возможностей: %1$s</string>
+    <string name="use_system_driver">Использовать системный драйвер</string>
+    <string name="play_anyway">Всё равно запустить</string>
+    <string name="driver_diagnostic_invalid">Некорректные данные диагностики: %1$s</string>
+    <string name="driver_test_cancelled">Проверка закрылась или была отменена.</string>
+    <string name="importing_vulkan_driver">Импортируем драйвер Vulkan…</string>
+    <string name="driver_imported">Драйвер импортирован: %1$s. Используйте «Проверить драйвер», чтобы протестировать его.</string>
+    <string name="driver_import_failed">Не удалось импортировать драйвер: %1$s</string>
+
+    <string name="updates_title">Обновления</string>
+    <string name="updates_current_latest">Установлена версия %1$s. Более новой версии на GitHub нет.</string>
+    <string name="update_available_title">Доступна новая версия: %1$s</string>
+    <string name="update_available_message">Её можно скачать с GitHub или продолжить играть на текущей версии. Установите новый APK поверх текущего, чтобы сохранить прогресс и настройки.</string>
+    <string name="update_now">Обновить</string>
+    <string name="update_later">Позже</string>
+    <string name="update_check_failed">Не удалось проверить GitHub. Проверьте подключение к интернету и повторите попытку позже.</string>
+
+    <string name="report_preparing">Подготавливаем журнал…</string>
+    <string name="report_title">Сообщить на GitHub</string>
+    <string name="report_saved_message">Полный журнал сохранён здесь:\n%1$s\n\nОткроется GitHub с уже заполненной технической сводкой. Опишите, что произошло, и по возможности приложите этот ZIP (GitHub не позволяет прикрепить его автоматически).</string>
+    <string name="open_github">Открыть GitHub</string>
+    <string name="report_prepare_failed">Не удалось подготовить журнал: %1$s</string>
+    <string name="browser_missing">Нет браузера, чтобы открыть %1$s</string>
+
+    <string name="graphics_cache_reset_title">Сбросить графический кэш</string>
+    <string name="graphics_cache_reset_message">Текущий сеанс игры будет закрыт. При следующем запуске шейдеры соберутся заново; сохранения и настройки не изменятся.</string>
+    <string name="graphics_cache_reset_action">Сбросить</string>
+    <string name="graphics_cache_process_error">Не удалось проверить процесс игры.</string>
+    <string name="graphics_cache_reset_error">Не удалось сбросить графический кэш.</string>
+    <string name="graphics_cache_ready_title">Графический кэш подготовлен</string>
+    <string name="graphics_cache_ready_message">При следующем запуске будет создан новый кэш. Старый сохранён как резервная копия во внутреннем кэше приложения.</string>
+    <string name="graphics_cache_title">Графический кэш</string>
+
+    <string name="crash_reason_anr">Игра перестала отвечать</string>
+    <string name="crash_reason_unexpected">Игра неожиданно закрылась</string>
+    <string name="diagnostics_create_report_failed">Не удалось создать отчёт.</string>
+    <string name="diagnostics_create_download_failed">Не удалось создать файл в папке загрузок.</string>
+    <string name="diagnostics_write_download_failed">Не удалось записать файл в папку загрузок.</string>
+    <string name="diagnostics_download_location">Загрузки/NFSU2/%1$s</string>
+
+    <string name="option_resolution_title">Внутреннее разрешение</string>
+    <string name="option_resolution_native">Нативное · максимальное качество</string>
+    <string name="option_resolution_75" formatted="false">75% · сбалансированное</string>
+    <string name="option_resolution_50" formatted="false">50% · максимальная производительность</string>
+    <string name="option_resolution_720">1280×720 · 16:9</string>
+    <string name="option_fps_title">Лимит FPS</string>
+    <string name="option_fps_30">30 FPS · экономия батареи</string>
+    <string name="option_fps_60">60 FPS</string>
+    <string name="option_fps_90">90 FPS</string>
+    <string name="option_fps_120">120 FPS</string>
+    <string name="option_fps_unlimited">Без ограничения</string>
+    <string name="option_widescreen_title">Широкоэкранный режим</string>
+    <string name="option_widescreen_on">Исправленные HUD и камера</string>
+    <string name="option_widescreen_off">Оригинальный 4:3 растянут</string>
+    <string name="option_minimap_title">Мини-карта</string>
+    <string name="option_minimap_top">Слева сверху</string>
+    <string name="option_minimap_bottom">Слева снизу (оригинал)</string>
+    <string name="option_latency_title">Синхронизация CPU/GPU</string>
+    <string name="option_latency_2">Производительность · CPU и GPU параллельно</string>
+    <string name="option_latency_1">Низкая задержка · меньше FPS</string>
+    <string name="option_textures_title">Сжатые текстуры</string>
+    <string name="option_textures_auto">Автоматически · GPU при поддержке</string>
+    <string name="option_textures_cpu">Преобразование на CPU · совместимость</string>
+    <string name="common_close">Закрыть</string>
+
+    <string name="game_status_checking_storage">Проверяем внутреннюю память/nfsu2…</string>
+    <string name="game_status_data_accessible">Данные доступны: внутренняя память/nfsu2</string>
+    <string name="game_status_vulkan_active">Vulkan 1.1: вывод изображения активен</string>
+    <string name="game_status_crt_pending">Ожидание запуска CRT</string>
+    <string name="game_status_crt_entry">Запускаем CRT-вход игры…</string>
+    <string name="game_status_guest_stopped">Запуск игры остановлен: %1$s</string>
+    <string name="game_status_custom_driver_failed">Не удалось загрузить драйвер Vulkan %1$s. Выберите системный драйвер в лаунчере.</string>
+    <string name="game_status_driver_hint">Используйте «Проверить драйвер» в лаунчере, чтобы увидеть, чего не хватает.</string>
+    <string name="game_storage_permission">Разрешите доступ к файлам, чтобы прочитать папку nfsu2 во внутренней памяти.</string>
+
+    <string name="tilt_no_accelerometer">На этом устройстве нет акселерометра.</string>
+    <string name="tilt_enable">Управлять наклоном телефона</string>
+    <string name="tilt_invert">Инвертировать направление</string>
+    <string name="tilt_sensitivity">Чувствительность: %1$s×</string>
+    <string name="tilt_help">Держите телефон в обычном игровом положении при применении. Наклон управляет поворотом влево/вправо; педали остаются сенсорными.</string>
+    <string name="tilt_title">Управление наклоном</string>
+    <string name="tilt_apply_calibrate">Применить и откалибровать</string>
+
+    <string name="text_input_hint">Имя, почта или пароль</string>
+    <string name="text_input_replace_current">Заменить текущее имя</string>
+    <string name="text_input_title">Ввод текста в игре</string>
+    <string name="text_input_write">Ввести</string>
+    <string name="text_input_validation">До 40 символов: латинские буквы без диакритики, цифры и . , - _ @ + ! # $ % &amp; * ( ) = ? / ; :</string>
+
+    <string name="controls_content_description">Игровое управление</string>
+    <string name="controls_toolbar_restore">СБРОСИТЬ</string>
+    <string name="controls_toolbar_save">СОХРАНИТЬ</string>
+    <string name="controls_toolbar_cancel">ОТМЕНА</string>
+    <string name="controls_toolbar_options">НАСТРОЙКИ</string>
+    <string name="controls_options_title">Настройки управления</string>
+    <string name="controls_option_style">Стиль: классический / Xbox / PlayStation</string>
+    <string name="controls_option_tilt">Управление наклоном</string>
+    <string name="controls_option_fps">Ограничение FPS</string>
+    <string name="controls_option_save_layout">Сохранить раскладку с именем</string>
+    <string name="controls_option_load_layout">Загрузить сохранённую раскладку</string>
+    <string name="controls_style_title">Стиль управления</string>
+    <string name="controls_style_classic">Классический · стрелки и педали</string>
+    <string name="controls_style_xbox">Xbox · руль и A / B / X / Y</string>
+    <string name="controls_style_playstation">PlayStation · руль и × / ○ / □ / △</string>
+    <string name="layout_name_hint">Название раскладки</string>
+    <string name="layout_save_racing_title">Сохранить гоночную раскладку</string>
+    <string name="layout_save_menu_title">Сохранить раскладку меню</string>
+    <string name="layout_name_required">Введите название</string>
+    <string name="layout_saved">Раскладка сохранена: %1$s</string>
+    <string name="layout_save_failed">Не удалось сохранить раскладку</string>
+    <string name="layout_none_saved">Для этого режима пока нет сохранённых раскладок</string>
+    <string name="layout_load_title">Загрузить раскладку</string>
+    <string name="layout_load_failed">Не удалось загрузить раскладку</string>
+
+    <string name="gpu_probe_checking">Проверяем драйвер Vulkan…</string>
+    <string name="gpu_probe_timeout">Проверка драйвера превысила 20 секунд</string>
+    <string name="gpu_probe_execution_failed">Не удалось выполнить проверку: %1$s</string>
+    <string name="gpu_probe_open_selected_failed">Не удалось открыть выбранный драйвер</string>
+    <string name="gpu_probe_no_gpu">Не найдено устройство с поддержкой Vulkan</string>
+
+    <string name="driver_error_create_folder">Не удалось создать папку драйвера.</string>
+    <string name="driver_error_open_zip">Не удалось открыть ZIP.</string>
+    <string name="driver_error_missing_meta">В ZIP драйвера отсутствует meta.json.</string>
+    <string name="driver_error_invalid_library_name">Некорректное значение libraryName.</string>
+    <string name="driver_error_android_too_old">Для этого драйвера нужна более новая версия Android.</string>
+    <string name="driver_error_invalid_name">Некорректное название драйвера.</string>
+    <string name="driver_error_install">Не удалось установить драйвер.</string>
+    <string name="driver_error_install_package">Не удалось установить пакет драйвера.</string>
+    <string name="driver_error_multiple_meta">Найдено несколько meta.json; пакет неоднозначен.</string>
+    <string name="driver_error_protect_library">Не удалось защитить библиотеку драйвера.</string>
+    <string name="driver_error_invalid_path">Некорректный путь драйвера.</string>
+    <string name="driver_error_zip_too_many_files">В ZIP слишком много файлов.</string>
+    <string name="driver_error_zip_invalid_paths">В ZIP есть некорректные или повторяющиеся пути.</string>
+    <string name="driver_error_create_archive_folder">Не удалось создать папку при распаковке драйвера.</string>
+    <string name="driver_error_package_too_large">Пакет драйвера слишком большой.</string>
+    <string name="driver_error_not_arm64">Драйвер должен быть библиотекой Android ARM64 (.so), а не библиотекой ПК или 32-битной сборкой.</string>
+    <string name="driver_error_unexpected_link">В пакете обнаружена неожиданная символическая ссылка.</string>
+    <string name="driver_error_delete">Не удалось удалить %1$s</string>
+    <string name="diagnostics_summary_apk_abi">ABI APK: %1$s</string>
+    <string name="diagnostics_summary_phone">Телефон: %1$s %2$s</string>
+    <string name="diagnostics_summary_android">Android: %1$s (API %2$d)</string>
+    <string name="diagnostics_summary_soc">SoC: %1$s</string>
+    <string name="diagnostics_summary_vulkan_driver">Драйвер Vulkan: %1$s</string>
+    <string name="diagnostics_date">Дата: %1$s</string>
+    <string name="diagnostics_abi">ABI: %1$s</string>
+    <string name="diagnostics_options">Настройки:</string>
+    <string name="issue_unexpected_close">неожиданное закрытие</string>
+    <string name="issue_what_happened">### Что произошло</string>
+    <string name="issue_steps_to_reproduce">### Как воспроизвести</string>
+    <string name="issue_device">### Устройство</string>
+    <string name="issue_full_log">### Полный журнал\nСохранён на телефоне в **%1$s**. Если возможно, прикрепите его здесь: перетащите файл или нажмите “Paste, drop, or click to add files”.</string>
+    <string name="issue_technical_summary">### Техническая сводка</string>
+    <string name="issue_last_frame">Последний кадр: %1$s</string>
+    <string name="issue_last_game_lines">--- последние строки журнала игры ---</string>
+</resources>

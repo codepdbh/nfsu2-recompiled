@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NFSU2 Android Evolved</string>
+    <string name="launcher_subtitle">PC · natively recompiled for Android</string>
+    <string name="launcher_game_files">GAME FILES</string>
+    <string name="launcher_play">PLAY</string>
+    <string name="launcher_allow_storage_access">Allow access to internal storage/nfsu2</string>
+    <string name="launcher_options">OPTIONS</string>
+    <string name="launcher_options_apply_on_play">Applied when you press PLAY.</string>
+    <string name="launcher_game_folders">Game folders</string>
+    <string name="launcher_missing_folders">Missing folders: %1$s</string>
+    <string name="launcher_widescreen_hud">Widescreen HUD (scripts/…WidescreenFix.dat)</string>
+    <string name="launcher_status_allow_access">Allow file access to read internal storage/nfsu2.</string>
+    <string name="launcher_status_game_root">Internal storage/nfsu2</string>
+    <string name="launcher_status_copy_files">Copy your game files to internal storage/nfsu2.</string>
+    <string name="launcher_optional_suffix"> · optional</string>
+
+    <string name="common_ok">OK</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_back">Back</string>
+    <string name="common_save">Save</string>
+    <string name="common_restore">Restore</string>
+
+    <string name="updated_title">Updated to version %1$s!</string>
+    <string name="loading_whats_new">Loading what’s new…</string>
+    <string name="view_on_github">View on GitHub</string>
+    <string name="whats_new_unavailable">Could not load what’s new (offline or not published yet). You can view it on GitHub.</string>
+    <string name="crash_title">The game closed</string>
+    <string name="crash_prompt">%1$s.\n\nDo you want to send the full log to GitHub so the problem can be fixed?</string>
+    <string name="report_on_github">Report on GitHub</string>
+    <string name="not_now">Not now</string>
+
+    <string name="interface_language">Interface language</string>
+    <string name="interface_language_system">System default</string>
+    <string name="interface_language_legacy_message">On Android 12 and earlier, the launcher follows the device language. Change the device language in system settings.</string>
+    <string name="vulkan_driver">Vulkan driver</string>
+    <string name="system_driver">System</string>
+    <string name="test_driver">Test driver</string>
+    <string name="gpu_and_vulkan_features">GPU and Vulkan features</string>
+    <string name="game_language">Game language</string>
+    <string name="no_game_languages_found">No languages were found in internal storage/nfsu2/LANGUAGES.</string>
+    <string name="reset_graphics_cache">Reset graphics cache</string>
+    <string name="regenerate_shaders">Rebuild shaders</string>
+    <string name="online_server">Online server</string>
+    <string name="check_updates">Check for updates</string>
+    <string name="checking_github">Checking GitHub…</string>
+    <string name="version_label">Version %1$s</string>
+    <string name="report_problem">Report a problem</string>
+    <string name="full_log_to_github">Full log to GitHub</string>
+
+    <string name="online_server_description">The game’s online mode (EA Nation) connects to this community server instead of EA’s discontinued servers.</string>
+    <string name="online_server_invalid">“%1$s” is not a valid server name.</string>
+    <string name="system_vulkan_driver">System driver</string>
+    <string name="import_zip">Import ZIP</string>
+    <string name="remove_selected">Remove selected</string>
+
+    <string name="driver_test_title">Vulkan driver test</string>
+    <string name="driver_test_failed">Could not use the driver: %1$s</string>
+    <string name="driver_test_start_error">Vulkan failed to start.</string>
+    <string name="driver_report_gpu">GPU: %1$s</string>
+    <string name="driver_report_vulkan">Vulkan: %1$s</string>
+    <string name="driver_report_driver">Driver: %1$s %2$s</string>
+    <string name="driver_report_bc_gpu">BC textures: on the GPU</string>
+    <string name="driver_report_bc_cpu">BC textures: converted on the CPU</string>
+    <string name="driver_report_vertex_missing">Unsupported vertex types: %1$s</string>
+    <string name="driver_report_compatible">Compatible with the game.</string>
+    <string name="driver_report_missing">Missing features: %1$s</string>
+    <string name="use_system_driver">Use system driver</string>
+    <string name="play_anyway">Play anyway</string>
+    <string name="driver_diagnostic_invalid">Invalid diagnostic: %1$s</string>
+    <string name="driver_test_cancelled">The test closed or was cancelled.</string>
+    <string name="importing_vulkan_driver">Importing Vulkan driver…</string>
+    <string name="driver_imported">Driver imported: %1$s. Use Test driver to verify it.</string>
+    <string name="driver_import_failed">Could not import the driver: %1$s</string>
+
+    <string name="updates_title">Updates</string>
+    <string name="updates_current_latest">You have version %1$s. There is no newer version on GitHub.</string>
+    <string name="update_available_title">New version available: %1$s</string>
+    <string name="update_available_message">You can download it from GitHub or keep playing this version. Install the new APK over the current one to keep your saves and settings.</string>
+    <string name="update_now">Update</string>
+    <string name="update_later">Later</string>
+    <string name="update_check_failed">Could not check GitHub. Check your connection and try again later.</string>
+
+    <string name="report_preparing">Preparing the log…</string>
+    <string name="report_title">Report on GitHub</string>
+    <string name="report_saved_message">The full log was saved to:\n%1$s\n\nGitHub will open with a pre-filled technical summary. Describe what happened and, if possible, attach that ZIP (GitHub cannot attach it automatically).</string>
+    <string name="open_github">Open GitHub</string>
+    <string name="report_prepare_failed">Could not prepare the log: %1$s</string>
+    <string name="browser_missing">No browser is available to open %1$s</string>
+
+    <string name="graphics_cache_reset_title">Reset graphics cache</string>
+    <string name="graphics_cache_reset_message">The current game session will be closed. Shaders will be rebuilt the next time you play; saves and settings are preserved.</string>
+    <string name="graphics_cache_reset_action">Reset</string>
+    <string name="graphics_cache_process_error">Could not inspect the game process.</string>
+    <string name="graphics_cache_reset_error">Could not reset the graphics cache.</string>
+    <string name="graphics_cache_ready_title">Graphics cache ready</string>
+    <string name="graphics_cache_ready_message">The next launch will create a new cache. The previous cache is kept as a backup in the app’s private cache.</string>
+    <string name="graphics_cache_title">Graphics cache</string>
+
+    <string name="crash_reason_anr">The game stopped responding</string>
+    <string name="crash_reason_unexpected">The game closed unexpectedly</string>
+    <string name="diagnostics_create_report_failed">Could not create the report.</string>
+    <string name="diagnostics_create_download_failed">Could not create the file in Downloads.</string>
+    <string name="diagnostics_write_download_failed">Could not write to Downloads.</string>
+    <string name="diagnostics_download_location">Downloads/NFSU2/%1$s</string>
+
+    <string name="option_resolution_title">Internal resolution</string>
+    <string name="option_resolution_native">Native · maximum quality</string>
+    <string name="option_resolution_75" formatted="false">75% · balanced</string>
+    <string name="option_resolution_50" formatted="false">50% · maximum performance</string>
+    <string name="option_resolution_720">1280×720 · 16:9</string>
+    <string name="option_fps_title">FPS limit</string>
+    <string name="option_fps_30">30 FPS · saves battery</string>
+    <string name="option_fps_60">60 FPS</string>
+    <string name="option_fps_90">90 FPS</string>
+    <string name="option_fps_120">120 FPS</string>
+    <string name="option_fps_unlimited">Unlimited</string>
+    <string name="option_widescreen_title">Widescreen</string>
+    <string name="option_widescreen_on">Corrected HUD and camera</string>
+    <string name="option_widescreen_off">Original 4:3 stretched</string>
+    <string name="option_minimap_title">Minimap</string>
+    <string name="option_minimap_top">Top left</string>
+    <string name="option_minimap_bottom">Bottom left (original)</string>
+    <string name="option_latency_title">CPU/GPU sync</string>
+    <string name="option_latency_2">Performance · CPU and GPU in parallel</string>
+    <string name="option_latency_1">Low latency · fewer FPS</string>
+    <string name="option_textures_title">Compressed textures</string>
+    <string name="option_textures_auto">Automatic · GPU when supported</string>
+    <string name="option_textures_cpu">Convert on CPU · compatibility</string>
+    <string name="common_close">Close</string>
+
+    <string name="game_status_checking_storage">Checking internal storage/nfsu2…</string>
+    <string name="game_status_data_accessible">Data accessible: internal storage/nfsu2</string>
+    <string name="game_status_vulkan_active">Vulkan 1.1: presentation active</string>
+    <string name="game_status_crt_pending">CRT boot pending</string>
+    <string name="game_status_crt_entry">Running game CRT entry…</string>
+    <string name="game_status_guest_stopped">Guest boot stopped: %1$s</string>
+    <string name="game_status_custom_driver_failed">Could not load Vulkan driver %1$s. Select the system driver in the launcher.</string>
+    <string name="game_status_driver_hint">Use “Test driver” in the launcher to see what is missing.</string>
+    <string name="game_storage_permission">Allow file access to read the nfsu2 folder in internal storage.</string>
+
+    <string name="tilt_no_accelerometer">This device has no accelerometer.</string>
+    <string name="tilt_enable">Steer by tilting the phone</string>
+    <string name="tilt_invert">Invert direction</string>
+    <string name="tilt_sensitivity">Sensitivity: %1$s×</string>
+    <string name="tilt_help">Hold the phone in your normal playing position when applying. Tilting controls left/right; the pedals remain touch controls.</string>
+    <string name="tilt_title">Tilt steering</string>
+    <string name="tilt_apply_calibrate">Apply and calibrate</string>
+
+    <string name="text_input_hint">Name, email or password</string>
+    <string name="text_input_replace_current">Replace current name</string>
+    <string name="text_input_title">Type in the game</string>
+    <string name="text_input_write">Type</string>
+    <string name="text_input_validation">Up to 40 characters: unaccented letters, numbers and . , - _ @ + ! # $ % &amp; * ( ) = ? / ; :</string>
+
+    <string name="controls_content_description">Game controls</string>
+    <string name="controls_toolbar_restore">RESTORE</string>
+    <string name="controls_toolbar_save">SAVE</string>
+    <string name="controls_toolbar_cancel">CANCEL</string>
+    <string name="controls_toolbar_options">OPTIONS</string>
+    <string name="controls_options_title">Control options</string>
+    <string name="controls_option_style">Style: classic / Xbox / PlayStation</string>
+    <string name="controls_option_tilt">Tilt steering</string>
+    <string name="controls_option_fps">FPS limit</string>
+    <string name="controls_option_save_layout">Save named layout</string>
+    <string name="controls_option_load_layout">Load custom layout</string>
+    <string name="controls_style_title">Driving style</string>
+    <string name="controls_style_classic">Classic · arrows and pedals</string>
+    <string name="controls_style_xbox">Xbox · wheel and A / B / X / Y</string>
+    <string name="controls_style_playstation">PlayStation · wheel and × / ○ / □ / △</string>
+    <string name="layout_name_hint">Layout name</string>
+    <string name="layout_save_racing_title">Save driving layout</string>
+    <string name="layout_save_menu_title">Save menu layout</string>
+    <string name="layout_name_required">Enter a name</string>
+    <string name="layout_saved">Layout saved: %1$s</string>
+    <string name="layout_save_failed">Could not save the layout</string>
+    <string name="layout_none_saved">There are no saved layouts for this mode yet</string>
+    <string name="layout_load_title">Load layout</string>
+    <string name="layout_load_failed">Could not load the layout</string>
+
+    <string name="gpu_probe_checking">Checking Vulkan driver…</string>
+    <string name="gpu_probe_timeout">The driver test exceeded 20 seconds</string>
+    <string name="gpu_probe_execution_failed">Could not run the test: %1$s</string>
+    <string name="gpu_probe_open_selected_failed">Could not open the selected driver</string>
+    <string name="gpu_probe_no_gpu">No Vulkan GPU was found</string>
+
+    <string name="driver_error_create_folder">Could not create the driver folder.</string>
+    <string name="driver_error_open_zip">Could not open the ZIP.</string>
+    <string name="driver_error_missing_meta">The driver ZIP does not contain meta.json.</string>
+    <string name="driver_error_invalid_library_name">libraryName is invalid.</string>
+    <string name="driver_error_android_too_old">This driver requires a newer Android version.</string>
+    <string name="driver_error_invalid_name">Invalid driver name.</string>
+    <string name="driver_error_install">Could not install the driver.</string>
+    <string name="driver_error_install_package">Could not install the driver package.</string>
+    <string name="driver_error_multiple_meta">Several meta.json files were found; the package is ambiguous.</string>
+    <string name="driver_error_protect_library">Could not protect the driver library.</string>
+    <string name="driver_error_invalid_path">Invalid driver path.</string>
+    <string name="driver_error_zip_too_many_files">The ZIP contains too many files.</string>
+    <string name="driver_error_zip_invalid_paths">The ZIP contains invalid or duplicate paths.</string>
+    <string name="driver_error_create_archive_folder">Could not create a folder while extracting the driver.</string>
+    <string name="driver_error_package_too_large">The driver package is too large.</string>
+    <string name="driver_error_not_arm64">The driver must be an Android ARM64 library (.so), not a PC or 32-bit library.</string>
+    <string name="driver_error_unexpected_link">Unexpected symbolic link in the package.</string>
+    <string name="driver_error_delete">Could not delete %1$s</string>
+    <string name="diagnostics_summary_apk_abi">APK ABI: %1$s</string>
+    <string name="diagnostics_summary_phone">Phone: %1$s %2$s</string>
+    <string name="diagnostics_summary_android">Android: %1$s (API %2$d)</string>
+    <string name="diagnostics_summary_soc">SoC: %1$s</string>
+    <string name="diagnostics_summary_vulkan_driver">Vulkan driver: %1$s</string>
+    <string name="diagnostics_date">Date: %1$s</string>
+    <string name="diagnostics_abi">ABI: %1$s</string>
+    <string name="diagnostics_options">Options:</string>
+    <string name="issue_unexpected_close">unexpected close</string>
+    <string name="issue_what_happened">### What happened</string>
+    <string name="issue_steps_to_reproduce">### Steps to reproduce</string>
+    <string name="issue_device">### Device</string>
+    <string name="issue_full_log">### Full log\nSaved on the phone at **%1$s**. If possible, attach it here: drag it in or tap “Paste, drop, or click to add files”.</string>
+    <string name="issue_technical_summary">### Technical summary</string>
+    <string name="issue_last_frame">Last frame: %1$s</string>
+    <string name="issue_last_game_lines">--- last game lines ---</string>
+</resources>
