@@ -4,31 +4,31 @@
 # never a branch target (checked against work/catalog.json).
 # VA        purpose
 0x0051B3CF  HUD anchor X after mov [esp+A0h], 320.0
-0x005368CC  HUD anchor X after mov [esp+74h], 320.0
-0x00536A9D  HUD anchor X after mov [esp+84h], 320.0
-0x00536CCD  HUD anchor X after mov [esp+94h], 320.0
-0x00537015  HUD anchor X after mov [esp+74h], 320.0
+0x005368DC  HUD anchor X after mov [esp+74h], 320.0
+0x00536AAD  HUD anchor X after mov [esp+84h], 320.0
+0x00536CDD  HUD anchor X after mov [esp+94h], 320.0
+0x00537025  HUD anchor X after mov [esp+74h], 320.0
 0x0050B4F9  HUD anchor X after mov [esp+1A0h], 320.0
 0x0048B644  HUD anchor X after mov [0082D2D8h], 320.0
-0x005CC0FD  rear-view mirror right X1 (440.0)
-0x005CC10D  rear-view mirror left X1 (200.0)
-0x005CC11D  rear-view mirror left X2 (200.0)
-0x005CC12D  rear-view mirror right X2 (440.0)
-0x005CBEF9  cutscene border width (640.0)
+0x005CC10D  rear-view mirror right X1 (440.0)
+0x005CC11D  rear-view mirror left X1 (200.0)
+0x005CC12D  rear-view mirror left X2 (200.0)
+0x005CC13D  rear-view mirror right X2 (440.0)
 0x005CBF09  cutscene border width (640.0)
-0x005CBE8D  cutscene border width (640.0)
-0x005CBEA5  cutscene border width (640.0)
-0x005C726E  radar mask width (640.0)
+0x005CBF19  cutscene border width (640.0)
+0x005CBE9D  cutscene border width (640.0)
+0x005CBEB5  cutscene border width (640.0)
 0x005C727E  radar mask width (640.0)
-0x005C7286  radar mask height (480.0)
+0x005C728E  radar mask width (640.0)
 0x005C7296  radar mask height (480.0)
+0x005C72A6  radar mask height (480.0)
 0x0051B198  HUD element position (HudHook)
-0x0051D655  radar blip position (BlipsHook)
+0x0051D665  radar blip position (BlipsHook)
 0x004C6759  HUD element position (HudHook2)
 0x0050516F  stop sign position (StopSignHook)
-0x00536A32  FMV quad extents (FMVWidescreenMode 1)
-0x005C7F64  3D view scale per view id (FixFOV)
-0x005C7FEE  FixFOV constant 1 (fdivr 1.0)
-0x005C8000  FixFOV constant 2 (fmul 0.5)
-0x005C8025  FixFOV constant 3 (fdivr 1.0)
-0x005D2C12  particle frame time pushed as 1/60 (FPSLimit; push 0x3C888889)
+0x00536A42  FMV quad extents (FMVWidescreenMode 1)
+0x005C7F74  3D view scale per view id (FixFOV)
+0x005C7FFE  FixFOV constant 1 (fdivr 1.0)
+0x005C8010  FixFOV constant 2 (fmul 0.5)
+0x005C8035  FixFOV constant 3 (fdivr 1.0)
+0x005D2C22  particle frame time pushed as 1/60 (FPSLimit; push 0x3C888889)

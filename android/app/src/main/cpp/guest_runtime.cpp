@@ -887,9 +887,9 @@ std::string connectGuestRuntime(const char* executable) {
         testGeneratedCallbacks();
         if(renderWidth.load()&&renderHeight.load()){
             uint32_t outputs=allocate(12);write32(outputs+8,0xdeadbeef);
-            callGuest(0x005bf610,{outputs,outputs+4});
+            callGuest(0x005bf620,{outputs,outputs+4});
             if(read32(outputs)!=renderWidth.load()||read32(outputs+4)!=renderHeight.load()||read32(outputs+8)!=0xdeadbeef)throw GuestStop("Guest resolution ABI failed");
-            for(uint32_t i=0;i<6;++i){write32(0x870d1c,i);callGuest(0x005bf610,{outputs,outputs+4});
+            for(uint32_t i=0;i<6;++i){write32(0x870d1c,i);callGuest(0x005bf620,{outputs,outputs+4});
                 if(read32(outputs)!=guestRenderModes[i].width||read32(outputs+4)!=guestRenderModes[i].height||read32(outputs+8)!=0xdeadbeef)throw GuestStop("Guest resolution slot/guard check failed");}
             write32(0x870d1c,5);firstGameResolution=true;
             heaps->free(GuestHeaps::process,outputs);

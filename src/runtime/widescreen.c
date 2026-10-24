@@ -35,7 +35,7 @@ static const int s_disable_cutscene_borders = 1;
 static float s_minimap_dy = 0.0f;
 /* Game frame time for FPSLimit (0 = the game's own 1/60 s). */
 static float s_frame_time = 0.0f;
-/* FOV multipliers chosen per view at 0x5C7F64 and applied at its three
+/* FOV multipliers chosen per view at 0x5C7F74 and applied at its three
  * reads of the 1.0/0.5/1.0 constants (the mod repoints those operands). */
 static double s_fov_scale[3] = {1.0, 1.0, 1.0};
 
@@ -134,35 +134,35 @@ void nfs_widescreen_apply_frame_rate(void) {
 static void set_esp_float(uint32_t offset, float value) { wrf(g_esp + offset, value); }
 
 void recomp_hook(uint32_t va) {
-    if (!s_enabled && va != 0x005D2C12u) return;
+    if (!s_enabled && va != 0x005D2C22u) return;
     switch (va) {
     /* HUD anchors: `mov [esp+N], 320.0` -> fHudPosX (pattern offsets 4/7). */
     case 0x0051B3CFu: set_esp_float(0xA0, s_hud_pos_x); break;
-    case 0x005368CCu: set_esp_float(0x74, s_hud_pos_x); break;
-    case 0x00536A9Du: set_esp_float(0x84, s_hud_pos_x); break;
-    case 0x00536CCDu: set_esp_float(0x94, s_hud_pos_x); break;
-    case 0x00537015u: set_esp_float(0x74, s_hud_pos_x); break;
+    case 0x005368DCu: set_esp_float(0x74, s_hud_pos_x); break;
+    case 0x00536AADu: set_esp_float(0x84, s_hud_pos_x); break;
+    case 0x00536CDDu: set_esp_float(0x94, s_hud_pos_x); break;
+    case 0x00537025u: set_esp_float(0x74, s_hud_pos_x); break;
     case 0x0050B4F9u: set_esp_float(0x1A0, s_hud_pos_x); break;
     case 0x0048B644u: wrf(0x0082D2D8u, s_hud_pos_x); break;
     /* Rear-view mirror quad: 440/200 shifted with the HUD centre. */
-    case 0x005CC0FDu: set_esp_float(0x30, (s_hud_pos_x - 320.0f) + 440.0f); break;
-    case 0x005CC10Du: set_esp_float(0x40, (s_hud_pos_x - 320.0f) + 200.0f); break;
-    case 0x005CC11Du: set_esp_float(0x50, (s_hud_pos_x - 320.0f) + 200.0f); break;
-    case 0x005CC12Du: set_esp_float(0x60, (s_hud_pos_x - 320.0f) + 440.0f); break;
+    case 0x005CC10Du: set_esp_float(0x30, (s_hud_pos_x - 320.0f) + 440.0f); break;
+    case 0x005CC11Du: set_esp_float(0x40, (s_hud_pos_x - 320.0f) + 200.0f); break;
+    case 0x005CC12Du: set_esp_float(0x50, (s_hud_pos_x - 320.0f) + 200.0f); break;
+    case 0x005CC13Du: set_esp_float(0x60, (s_hud_pos_x - 320.0f) + 440.0f); break;
     /* Cutscene letterbox quads (DisableCutsceneBorders = 1). */
-    case 0x005CBEF9u: set_esp_float(0x38, s_disable_cutscene_borders ? 0.0f : s_width); break;
-    case 0x005CBF09u: set_esp_float(0x48, s_disable_cutscene_borders ? 0.0f : s_width); break;
-    case 0x005CBE8Du: set_esp_float(0x2C, s_disable_cutscene_borders ? 0.0f : s_width); break;
-    case 0x005CBEA5u: set_esp_float(0x3C, s_disable_cutscene_borders ? 0.0f : s_width); break;
+    case 0x005CBF09u: set_esp_float(0x38, s_disable_cutscene_borders ? 0.0f : s_width); break;
+    case 0x005CBF19u: set_esp_float(0x48, s_disable_cutscene_borders ? 0.0f : s_width); break;
+    case 0x005CBE9Du: set_esp_float(0x2C, s_disable_cutscene_borders ? 0.0f : s_width); break;
+    case 0x005CBEB5u: set_esp_float(0x3C, s_disable_cutscene_borders ? 0.0f : s_width); break;
     /* Radar mask covers the whole render target. */
-    case 0x005C726Eu: set_esp_float(0x30, s_width * 2.0f); break;
-    case 0x005C727Eu: set_esp_float(0x40, s_width * 2.0f); break;
-    case 0x005C7286u: set_esp_float(0x44, s_height * 2.0f); break;
-    case 0x005C7296u: set_esp_float(0x54, s_height * 2.0f); break;
+    case 0x005C727Eu: set_esp_float(0x30, s_width * 2.0f); break;
+    case 0x005C728Eu: set_esp_float(0x40, s_width * 2.0f); break;
+    case 0x005C7296u: set_esp_float(0x44, s_height * 2.0f); break;
+    case 0x005C72A6u: set_esp_float(0x54, s_height * 2.0f); break;
     /* HudHook: the element position just stored from ecx/edx. */
     case 0x0051B198u: adjust_mem_pair(g_esp + 0x60, g_esp + 0x64); break;
     /* BlipsHook: radar blips, before `mov [edx], ecx`. */
-    case 0x0051D655u: adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20); g_ecx = MEM32(g_ebx + 0x1C); break;
+    case 0x0051D665u: adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20); g_ecx = MEM32(g_ebx + 0x1C); break;
     /* HudHook2: ecx = adjusted X of [esi+1C]/[esi+20]. */
     case 0x004C6759u: {
         float x, y; uint32_t v = g_ecx; memcpy(&x, &v, 4); y = rdf(g_esi + 0x20);
@@ -177,14 +177,14 @@ void recomp_hook(uint32_t va) {
         break;
     }
     /* FMVWidescreenMode = 1 (cropped 16:9): the four pushed quad extents. */
-    case 0x00536A32u: {
+    case 0x00536A42u: {
         const float v = 0.5f / ((4.0f / 3.0f) / (16.0f / 9.0f));
         set_esp_float(0x0, -v); set_esp_float(0x4, -v); set_esp_float(0x8, v); set_esp_float(0xC, v);
         break;
     }
     /* FixFOV: ST0 was viewport height/width; the mod loads a per-view scale
      * and picks the constants of the three later reads by view id (ecx). */
-    case 0x005C7F64u: {
+    case 0x005C7F74u: {
         uint32_t view = g_ecx;
         double hor = 1.0 / (s_aspect / (4.0 / 3.0));
         if (view == 1 || view == 4) { s_fov_scale[0] = hor; s_fov_scale[1] = 0.43511; s_fov_scale[2] = 1.22; }
@@ -193,11 +193,11 @@ void recomp_hook(uint32_t va) {
         break;
     }
     /* `fdivr [1.0]`, `fmul [0.5]`, `fdivr [1.0]`: rescale by new/original. */
-    case 0x005C7FEEu: g_st[0] *= s_fov_scale[0] / rdf(0x00784250u); break;
-    case 0x005C8000u: g_st[0] *= s_fov_scale[1] / rdf(0x00784260u); break;
-    case 0x005C8025u: g_st[0] *= s_fov_scale[2] / rdf(0x00784250u); break;
+    case 0x005C7FFEu: g_st[0] *= s_fov_scale[0] / rdf(0x00784250u); break;
+    case 0x005C8010u: g_st[0] *= s_fov_scale[1] / rdf(0x00784260u); break;
+    case 0x005C8035u: g_st[0] *= s_fov_scale[2] / rdf(0x00784250u); break;
     /* FPSLimit: eDisplayFrame pushes 1/60 s as the particle step. */
-    case 0x005D2C12u: if (s_frame_time > 0.0f) set_esp_float(0x0, s_frame_time); break;
+    case 0x005D2C22u: if (s_frame_time > 0.0f) set_esp_float(0x0, s_frame_time); break;
     default: break;
     }
 }
