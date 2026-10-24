@@ -23,10 +23,19 @@ import android.text.InputFilter;
 import android.text.InputType;
 import android.view.inputmethod.EditorInfo;
 import android.util.DisplayMetrics;
+import android.util.Log;
 
 /** Storage permission gateway for the fixed Internal storage/nfsu2 directory. */
 public final class GameActivity extends NativeActivity {
     static {
+        // Only bundled by the English-fork sync build (sync-and-build-english.yml),
+        // which patches a specific upstream prebuilt libnfsu2_android.so for
+        // persistent graphics settings. Absent in regular builds; must not crash.
+        try {
+            System.loadLibrary("registry_sync");
+        } catch (UnsatisfiedLinkError e) {
+            Log.i("GameActivity", "registry_sync not bundled, skipping persistent settings sync");
+        }
         System.loadLibrary("nfsu2_android");
     }
     private boolean requested;
