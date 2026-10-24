@@ -23,21 +23,10 @@ import android.text.InputFilter;
 import android.text.InputType;
 import android.view.inputmethod.EditorInfo;
 import android.util.DisplayMetrics;
-import android.util.Log;
 
 /** Storage permission gateway for the fixed Internal storage/nfsu2 directory. */
 public final class GameActivity extends NativeActivity {
-    static {
-        // Only bundled by the English-fork sync build (sync-and-build-english.yml),
-        // which patches a specific upstream prebuilt libnfsu2_android.so for
-        // persistent graphics settings. Absent in regular builds; must not crash.
-        try {
-            System.loadLibrary("registry_sync");
-        } catch (UnsatisfiedLinkError e) {
-            Log.i("GameActivity", "registry_sync not bundled, skipping persistent settings sync");
-        }
-        System.loadLibrary("nfsu2_android");
-    }
+    static { System.loadLibrary("nfsu2_android"); }
     private boolean requested;
     private boolean foreground;
     private TextView status;
@@ -81,24 +70,24 @@ public final class GameActivity extends NativeActivity {
         }
     }
     private void showTiltOptions() {
-        if(tiltSensor==null) {Toast.makeText(this,"На этом устройстве нет акселерометра",Toast.LENGTH_LONG).show();return;}
+        if(tiltSensor==null) {Toast.makeText(this,"Este dispositivo no dispone de acelerómetro",Toast.LENGTH_LONG).show();return;}
         android.content.SharedPreferences options=getSharedPreferences("touch_layouts_v1",MODE_PRIVATE);
         LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(24),dp(8),dp(24),dp(8));
-        CheckBox enabled=new CheckBox(this);enabled.setText("Управление наклоном устройства");enabled.setChecked(tiltEnabled);form.addView(enabled);
-        CheckBox invert=new CheckBox(this);invert.setText("Инвертировать управление");invert.setChecked(tiltInvert);form.addView(invert);
-        TextView label=new TextView(this);label.setText("Чувствительность: "+tiltSensitivity+"×");form.addView(label);
+        CheckBox enabled=new CheckBox(this);enabled.setText("Girar inclinando el celular");enabled.setChecked(tiltEnabled);form.addView(enabled);
+        CheckBox invert=new CheckBox(this);invert.setText("Invertir dirección");invert.setChecked(tiltInvert);form.addView(invert);
+        TextView label=new TextView(this);label.setText("Sensibilidad: "+tiltSensitivity+"×");form.addView(label);
         android.widget.SeekBar sensitivity=new android.widget.SeekBar(this);sensitivity.setMax(30);sensitivity.setProgress(Math.round(tiltSensitivity*10)-10);form.addView(sensitivity);
         sensitivity.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
             public void onStartTrackingTouch(android.widget.SeekBar bar) {}public void onStopTrackingTouch(android.widget.SeekBar bar) {}
-            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user) {label.setText("Чувствительность: "+((progress+10)/10f)+"×");}
+            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user) {label.setText("Sensibilidad: "+((progress+10)/10f)+"×");}
         });
-        TextView help=new TextView(this);help.setText("Держите устройство в игровом положении, когда применяете настройки. Наклон управляет поворотом влево/вправо, педали остаются на экране.");form.addView(help);
-        new AlertDialog.Builder(this).setTitle("Управление наклоном").setView(form)
-                .setPositiveButton("Применить и откалибровать",(dialog,which)->{
+        TextView help=new TextView(this);help.setText("Sostén el celular en tu posición de juego al aplicar. La inclinación activa izquierda/derecha; los pedales siguen siendo táctiles.");form.addView(help);
+        new AlertDialog.Builder(this).setTitle("Conducción por inclinación").setView(form)
+                .setPositiveButton("Aplicar y calibrar",(dialog,which)->{
                     tiltEnabled=enabled.isChecked();tiltInvert=invert.isChecked();tiltSensitivity=(sensitivity.getProgress()+10)/10f;
                     options.edit().putBoolean("tilt.enabled",tiltEnabled).putBoolean("tilt.invert",tiltInvert).putFloat("tilt.sensitivity",tiltSensitivity).apply();
                     updateTiltSensor();
-                }).setNegativeButton("Отмена",null).show();
+                }).setNegativeButton("Cancelar",null).show();
     }
     private android.hardware.input.InputManager inputManager;
     private final android.hardware.input.InputManager.InputDeviceListener gamepadListener=new android.hardware.input.InputManager.InputDeviceListener() {
@@ -170,31 +159,31 @@ public final class GameActivity extends NativeActivity {
                 .setSingleChoiceItems(option.labels,selected,(dialog,which)->{
                     GameOptions.set(this,GameOptions.FPS,option.values[which]);
                     nativeFrameLimit(Integer.parseInt(option.values[which]));dialog.dismiss();
-                }).setNegativeButton("Отмена",null).show();
+                }).setNegativeButton("Cancelar",null).show();
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private void showTextInput() {
         EditText name = new EditText(this);
         name.setSingleLine(true);
-        name.setHint("Имя, email или пароль");
+        name.setHint("Nombre, correo o contraseña");
         name.setFilters(new InputFilter[]{new InputFilter.LengthFilter(40)});
         name.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD |
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         name.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         CheckBox replace = new CheckBox(this);
-        replace.setText("Заменить текущий текст");replace.setChecked(true);
+        replace.setText("Reemplazar el nombre actual");replace.setChecked(true);
         LinearLayout form = new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(20), 0, dp(20), 0);form.addView(name);form.addView(replace);
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Ввод текста в игру")
+                .setTitle("Escribir en el juego")
                 .setView(form)
-                .setNegativeButton("Отмена", null)
-                .setPositiveButton("Отправить в игру", null)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Escribir", null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
             String value = name.getText().toString();
             if (value.isEmpty() || !value.matches("[A-Za-z0-9 .,=/;_+?:!@#$%&*()-]{1,40}")) {
-                name.setError("До 40 символов: буквы, цифры и . , - _ @ + ! # $ % & * ( ) = ? / ; :");
+                name.setError("Hasta 40 caracteres: letras sin tildes, números y . , - _ @ + ! # $ % & * ( ) = ? / ; :");
                 return;
             }
             nativeTypeText(value, replace.isChecked());
@@ -243,7 +232,7 @@ public final class GameActivity extends NativeActivity {
         status.setBackgroundColor(0xb0000000);
         status.setTextSize(18);
         status.setPadding(24, 16, 24, 16);
-        status.setText("NFSU2 Android Evolved\nПроверка внутреннего хранилища/nfsu2…");
+        status.setText("NFSU2 Android Evolved\nComprobando memoria interna/nfsu2…");
         // NativeActivity gives its main window surface to Vulkan; use a separate
         // non-interactive popup surface for the diagnostic text.
         statusWindow = new PopupWindow(status, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -327,7 +316,7 @@ public final class GameActivity extends NativeActivity {
                     && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         if (!allowed && !requested) {
             requested = true;
-            Toast.makeText(this, "Разрешите доступ к файлам, чтобы читать внутреннее хранилище/nfsu2.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Permite acceso a archivos para leer la carpeta nfsu2 de la memoria interna", Toast.LENGTH_LONG).show();
             if (Build.VERSION.SDK_INT >= 30) {
                 startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                         Uri.parse("package:" + getPackageName())));

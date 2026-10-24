@@ -14,16 +14,16 @@ final class GraphicsCache {
     static final String DIRECTORY = "dxvk-v2";
 
     static void prompt(Activity activity) {
-        new AlertDialog.Builder(activity).setTitle("Reset graphics cache")
-                .setMessage("The current game session will close. Shaders will recompile when playing; saves and settings are kept.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Reset", (dialog, which) -> reset(activity)).show();
+        new AlertDialog.Builder(activity).setTitle(R.string.graphics_cache_reset_title)
+                .setMessage(R.string.graphics_cache_reset_message)
+                .setNegativeButton(R.string.common_cancel, null)
+                .setPositiveButton(R.string.graphics_cache_reset_action, (dialog, which) -> reset(activity)).show();
     }
 
     private static void reset(Activity activity) {
         try {
             ActivityManager manager = (ActivityManager) activity.getSystemService(Activity.ACTIVITY_SERVICE);
-            if (manager == null) throw new IllegalStateException("Could not check game process.");
+            if (manager == null) throw new IllegalStateException(activity.getString(R.string.graphics_cache_process_error));
             List<ActivityManager.RunningAppProcessInfo> running = manager.getRunningAppProcesses();
             if (running != null) for (ActivityManager.RunningAppProcessInfo process : running)
                 if (process.uid == Process.myUid() && process.processName.equals(activity.getPackageName() + ":game"))
@@ -32,14 +32,14 @@ final class GraphicsCache {
             if (cache.exists()) {
                 File backup = new File(activity.getCacheDir(), DIRECTORY + "-reset-" + System.currentTimeMillis());
                 if (!cache.isDirectory() || !cache.renameTo(backup))
-                    throw new IllegalStateException("Could not reset graphics cache.");
+                    throw new IllegalStateException(activity.getString(R.string.graphics_cache_reset_error));
             }
-            new AlertDialog.Builder(activity).setTitle("Graphics cache ready")
-                    .setMessage("The next launch will generate a fresh cache. The previous cache is backed up in the app private cache.")
-                    .setPositiveButton("OK", null).show();
+            new AlertDialog.Builder(activity).setTitle(R.string.graphics_cache_ready_title)
+                    .setMessage(R.string.graphics_cache_ready_message)
+                    .setPositiveButton(R.string.common_ok, null).show();
         } catch (RuntimeException error) {
-            new AlertDialog.Builder(activity).setTitle("Graphics cache").setMessage(error.getMessage())
-                    .setPositiveButton("OK", null).show();
+            new AlertDialog.Builder(activity).setTitle(R.string.graphics_cache_title).setMessage(error.getMessage())
+                    .setPositiveButton(R.string.common_ok, null).show();
         }
     }
 }

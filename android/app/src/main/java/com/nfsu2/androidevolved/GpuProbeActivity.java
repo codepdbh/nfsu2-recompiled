@@ -20,22 +20,27 @@ public final class GpuProbeActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         TextView status = new TextView(this);
-        status.setText("Проверка драйвера Vulkan…");
+        status.setText(R.string.gpu_probe_checking);
         status.setTextColor(0xFFFFFFFF); status.setTextSize(18);
         status.setGravity(android.view.Gravity.CENTER); status.setBackgroundColor(0xFF0B0F14);
         setContentView(status);
         Handler main = new Handler(Looper.getMainLooper());
-        main.postDelayed(() -> finishReport("{\"probeError\":\"Тест драйвера не завершился за 20 секунд\",\"driverLoadFailed\":true}"), 20000);
+        main.postDelayed(() -> finishReport(errorReport(getString(R.string.gpu_probe_timeout))), 20000);
         String[] loader = GpuDrivers.loaderArguments(this);
         new Thread(() -> {
             String result;
             try { result = nativeGpuReport(loader[0], loader[1], loader[2], loader[3]); }
             catch (Exception | LinkageError error) {
-                result = "{\"probeError\":\"Не удалось выполнить тест: " + error.getClass().getSimpleName() + "\",\"driverLoadFailed\":true}";
+                result = errorReport(getString(R.string.gpu_probe_execution_failed, error.getClass().getSimpleName()));
             }
             String report = result;
             main.post(() -> finishReport(report));
         }, "VulkanDriverProbe").start();
+    }
+
+    private static String errorReport(String message) {
+        try { return new org.json.JSONObject().put("probeError", message).put("driverLoadFailed", true).toString(); }
+        catch (org.json.JSONException impossible) { throw new AssertionError(impossible); }
     }
 
     private void finishReport(String report) {

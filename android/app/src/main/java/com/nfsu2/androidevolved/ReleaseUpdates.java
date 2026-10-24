@@ -33,7 +33,7 @@ final class ReleaseUpdates {
         Thread worker = new Thread(() -> {
             Result result;
             try { result = fetch(app, force); }
-            catch (Exception error) { result = new Result(null, null, "Не удалось связаться с GitHub. Проверьте подключение к интернету и попробуйте позже."); }
+            catch (Exception error) { result = new Result(null, null, app.getString(R.string.update_check_failed)); }
             Result value = result;
             main.post(() -> callback.accept(value));
         }, "GitHubReleaseCheck");

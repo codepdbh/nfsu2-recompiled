@@ -110,6 +110,31 @@ final class GpuDrivers {
         DriverArchive.delete(target);
         if (selectedId(context).equals(driver.id)) select(context, "");
     }
+    static String errorMessage(Context context, Throwable error) {
+        String message = error.getMessage();
+        if (message == null) return error.toString();
+        if (message.equals("No se pudo crear la carpeta del driver.")) return context.getString(R.string.driver_error_create_folder);
+        if (message.equals("No se pudo abrir el ZIP.")) return context.getString(R.string.driver_error_open_zip);
+        if (message.equals("Falta meta.json en el ZIP del driver.")) return context.getString(R.string.driver_error_missing_meta);
+        if (message.equals("libraryName no es válido.")) return context.getString(R.string.driver_error_invalid_library_name);
+        if (message.equals("Este driver necesita una versión más reciente de Android.")) return context.getString(R.string.driver_error_android_too_old);
+        if (message.equals("Nombre de driver no válido.")) return context.getString(R.string.driver_error_invalid_name);
+        if (message.equals("No se pudo instalar el driver.")) return context.getString(R.string.driver_error_install);
+        if (message.equals("No se pudo instalar el paquete.")) return context.getString(R.string.driver_error_install_package);
+        if (message.equals("Hay varios meta.json; el paquete es ambiguo.")) return context.getString(R.string.driver_error_multiple_meta);
+        if (message.equals("No se pudo proteger la biblioteca del driver.")) return context.getString(R.string.driver_error_protect_library);
+        if (message.equals("Ruta de driver no válida.")) return context.getString(R.string.driver_error_invalid_path);
+        if (message.equals("El ZIP contiene demasiados archivos.")) return context.getString(R.string.driver_error_zip_too_many_files);
+        if (message.equals("El ZIP contiene rutas no válidas o repetidas.")) return context.getString(R.string.driver_error_zip_invalid_paths);
+        if (message.equals("No se pudo crear la carpeta.")) return context.getString(R.string.driver_error_create_archive_folder);
+        if (message.equals("El paquete de driver es demasiado grande.")) return context.getString(R.string.driver_error_package_too_large);
+        if (message.equals("El driver debe ser una biblioteca Android ARM64 (.so), no de PC ni de 32 bits.")) return context.getString(R.string.driver_error_not_arm64);
+        if (message.equals("Enlace inesperado en el paquete.")) return context.getString(R.string.driver_error_unexpected_link);
+        String deletePrefix = "No se pudo eliminar ";
+        if (message.startsWith(deletePrefix)) return context.getString(R.string.driver_error_delete, message.substring(deletePrefix.length()));
+        return message;
+    }
+
     /** {hooks dir, temp dir, driver dir, library}; empty driver fields select the system driver. */
     static String[] loaderArguments(Context context) {
         Driver driver = android.os.Process.is64Bit() ? selected(context) : null;
