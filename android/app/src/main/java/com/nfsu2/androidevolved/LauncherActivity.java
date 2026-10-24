@@ -312,7 +312,7 @@ public final class LauncherActivity extends Activity {
             optionsList.addView(optionRow(option.title(this), option.label(this, GameOptions.get(this, option.key)), () -> chooseOption(option)));
         optionsList.addView(optionRow(getString(R.string.online_server), GameOptions.onlineServer(this), this::chooseOnlineServer));
         optionsList.addView(optionRow(getString(R.string.check_updates),
-                checkingUpdates ? getString(R.string.checking_github) : getString(R.string.version_label, ReleaseUpdates.installed(this)), () -> checkUpdates(true)));
+                checkingUpdates ? getString(R.string.checking_github) : getString(R.string.version_label, ReleaseUpdates.installed(this) + " · " + getString(R.string.build_date)), () -> checkUpdates(true)));
         optionsList.addView(optionRow(getString(R.string.report_problem), getString(R.string.full_log_to_github), () -> prepareReport(null)));
     }
 

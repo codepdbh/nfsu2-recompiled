@@ -62,7 +62,7 @@ final class Diagnostics {
 
     static String summary(Context context) {
         GpuDrivers.Driver driver = GpuDrivers.selected(context);
-        return context.getString(R.string.app_name) + " " + ReleaseUpdates.installed(context)
+        return context.getString(R.string.app_name) + " " + ReleaseUpdates.installed(context) + " (" + context.getString(R.string.build_date) + ")"
                 + "\n" + context.getString(R.string.diagnostics_summary_apk_abi, Process.is64Bit() ? "arm64-v8a" : "armeabi-v7a")
                 + "\n" + context.getString(R.string.diagnostics_summary_phone, Build.MANUFACTURER, Build.MODEL)
                 + "\n" + context.getString(R.string.diagnostics_summary_android, Build.VERSION.RELEASE, Build.VERSION.SDK_INT)
