@@ -25,7 +25,14 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.content.res.AssetFileDescriptor;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -52,7 +59,10 @@ public final class LauncherActivity extends Activity {
     private LinearLayout checksList, optionsList;
     private TextView status;
     private Button play, access;
-    private boolean playAfterProbe, checkingUpdates, resumed;
+    private boolean playAfterProbe, checkingUpdates, resumed, extracting, extractFailed;
+    private String extractStatus = "";
+    /** Game files packed into the APK under assets/nfsu2 (see app/build.gradle). */
+    private static final String BUNDLE = "nfsu2";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -70,10 +80,10 @@ public final class LauncherActivity extends Activity {
     /** First launch after an update: the installed version's release notes from GitHub. */
     private void showWhatsNew(String version) {
         AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("Updated to version " + version + "!")
-                .setMessage("Loading what's new…")
-                .setPositiveButton("OK", (d, which) -> ReleaseUpdates.whatsNewSeen(this))
-                .setNeutralButton("View on GitHub", (d, which) -> {
+                .setTitle("Обновлено до версии " + version + "!")
+                .setMessage("Загрузка списка изменений…")
+                .setPositiveButton("ОК", (d, which) -> ReleaseUpdates.whatsNewSeen(this))
+                .setNeutralButton("Открыть на GitHub", (d, which) -> {
                     ReleaseUpdates.whatsNewSeen(this);
                     openUrl(Uri.parse("https://github.com/punitr2007/nfsu2-recompiled/releases/tag/v" + Uri.encode(version)));
                 })
@@ -85,7 +95,7 @@ public final class LauncherActivity extends Activity {
             int start = notes == null ? -1 : (notes.indexOf("What's Changed") >= 0 ? notes.indexOf("What's Changed") : notes.indexOf("Novedades"));
             if (start > 0) notes = notes.substring(start);
             dialog.setMessage(notes != null ? notes
-                    : "Could not load what's new (offline or not yet published). You can view on GitHub.");
+                    : "Не удалось загрузить список изменений (нет сети или ещё не опубликовано). Можно посмотреть на GitHub.");
         });
     }
 
@@ -97,9 +107,9 @@ public final class LauncherActivity extends Activity {
         if (crash != null) {
             Diagnostics.acknowledgeCrashes(this);
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("The game closed").setMessage(crash + ".\n\nWould you like to send the complete log to GitHub so it can be fixed?")
-                    .setPositiveButton("Report on GitHub", (dialog, which) -> prepareReport(crash))
-                    .setNegativeButton("Not now", null).show();
+                    .setTitle("Игра закрылась").setMessage(crash + ".\n\nОтправить полный лог на GitHub, чтобы проблему исправили?")
+                    .setPositiveButton("Сообщить на GitHub", (dialog, which) -> prepareReport(crash))
+                    .setNegativeButton("Не сейчас", null).show();
         }
     }
 
@@ -137,7 +147,7 @@ public final class LauncherActivity extends Activity {
         titles.setOrientation(LinearLayout.VERTICAL);
         titles.setPadding(dp(14), 0, 0, 0);
         titles.addView(label("Need for Speed Underground 2", 18, Color.WHITE, true));
-        titles.addView(label("PC · Natively recompiled for Android", 12, 0x99FFFFFF, false));
+        titles.addView(label("PC · нативно перекомпилировано для Android", 12, 0x99FFFFFF, false));
         header.addView(titles);
         left.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
@@ -145,7 +155,7 @@ public final class LauncherActivity extends Activity {
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
         cardParams.topMargin = dp(8);
         left.addView(card, cardParams);
-        card.addView(label("GAME FILES", 12, ACCENT, true));
+        card.addView(label("ФАЙЛЫ ИГРЫ", 12, ACCENT, true));
         status = label("", 13, 0xDDFFFFFF, false);
         status.setPadding(0, dp(4), 0, dp(6));
         card.addView(status);
@@ -153,13 +163,13 @@ public final class LauncherActivity extends Activity {
         checksList.setOrientation(LinearLayout.VERTICAL);
         card.addView(checksList);
 
-        play = actionButton("PLAY", true);
+        play = actionButton("ИГРАТЬ", true);
         play.setOnClickListener(view -> play());
         LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(-1, dp(54));
         playParams.topMargin = dp(8);
         left.addView(play, playParams);
 
-        access = actionButton("Allow access to internal storage/nfsu2", false);
+        access = actionButton("Разрешить доступ к внутреннему хранилищу/nfsu2", false);
         access.setOnClickListener(view -> requestAccess());
         LinearLayout.LayoutParams accessParams = new LinearLayout.LayoutParams(-1, dp(46));
         accessParams.topMargin = dp(10);
@@ -170,8 +180,8 @@ public final class LauncherActivity extends Activity {
         LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f);
         rightParams.leftMargin = dp(24);
         columns.addView(right, rightParams);
-        right.addView(label("OPTIONS", 12, ACCENT, true));
-        TextView note = label("Applied when pressing PLAY.", 12, 0x88FFFFFF, false);
+        right.addView(label("НАСТРОЙКИ", 12, ACCENT, true));
+        TextView note = label("Применяется при нажатии ИГРАТЬ.", 12, 0x88FFFFFF, false);
         note.setPadding(0, dp(2), 0, dp(4));
         right.addView(note);
         ScrollView scroll = new ScrollView(this);
@@ -191,16 +201,101 @@ public final class LauncherActivity extends Activity {
         StringBuilder missing = new StringBuilder();
         for (String folder : new String[] {"GLOBAL", "TRACKS", "CARS", "FRONTEND", "LANGUAGES"})
             if (!(allowed && new File(root, folder).isDirectory())) missing.append(missing.length() == 0 ? "" : ", ").append(folder);
-        addCheck(missing.length() == 0 ? "Game folders" : "Missing folders: " + missing, missing.length() == 0, true);
-        addCheck("Widescreen HUD (scripts/…WidescreenFix.dat)",
+        addCheck(missing.length() == 0 ? "Папки игры" : "Отсутствуют папки: " + missing, missing.length() == 0, true);
+        addCheck("Широкоформатный HUD (scripts/…WidescreenFix.dat)",
                 allowed && new File(root, "scripts/NFSUnderground2.WidescreenFix.dat").isFile(), false);
         boolean ready = exe && !languages().isEmpty();
-        status.setText(!allowed ? "Grant file access to read internal storage/nfsu2."
-                : ready ? "Internal storage/nfsu2" : "Copy your game files to internal storage/nfsu2.");
+        status.setText(!allowed ? "Разрешите доступ к файлам, чтобы читать внутреннее хранилище/nfsu2."
+                : ready ? "Внутреннее хранилище/nfsu2" : "Скопируйте файлы игры во внутреннее хранилище/nfsu2.");
         play.setEnabled(ready);
         play.setAlpha(ready ? 1f : .45f);
         access.setVisibility(allowed ? View.GONE : View.VISIBLE);
         refreshOptions();
+        if (allowed && !extracting && !extractFailed && hasBundledGame() && !bundleExtracted()) extractBundledGame();
+        if (extracting) {
+            status.setText(extractStatus);
+            play.setEnabled(false);
+            play.setAlpha(.45f);
+        }
+    }
+
+    // ---- Bundled game files ----------------------------------------------------------------------------
+
+    private boolean hasBundledGame() {
+        try {
+            String[] files = getAssets().list(BUNDLE);
+            return files != null && files.length > 0;
+        } catch (IOException error) { return false; }
+    }
+
+    /** Changes with every install, so an updated APK unpacks its files again. */
+    private String bundleStamp() {
+        try { return String.valueOf(getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime); }
+        catch (PackageManager.NameNotFoundException error) { return "0"; }
+    }
+
+    private File bundleMarker() { return new File(gameRoot(), ".bundle_installed"); }
+
+    private boolean bundleExtracted() {
+        try {
+            return bundleMarker().isFile()
+                    && new String(Files.readAllBytes(bundleMarker().toPath()), StandardCharsets.UTF_8).trim().equals(bundleStamp());
+        } catch (IOException error) { return false; }
+    }
+
+    private void listAssets(String path, List<String> out) throws IOException {
+        String[] children = getAssets().list(path);
+        if (children == null || children.length == 0) { out.add(path); return; }
+        for (String child : children) listAssets(path + "/" + child, out);
+    }
+
+    private void extractBundledGame() {
+        extracting = true;
+        extractStatus = "Подготовка файлов игры…";
+        status.setText(extractStatus);
+        play.setEnabled(false);
+        play.setAlpha(.45f);
+        File root = gameRoot();
+        worker.execute(() -> {
+            try {
+                List<String> files = new ArrayList<>();
+                listAssets(BUNDLE, files);
+                byte[] buffer = new byte[1 << 20];
+                for (int i = 0; i < files.size(); i++) {
+                    String asset = files.get(i);
+                    String name = asset.substring(BUNDLE.length() + 1);
+                    if (name.equalsIgnoreCase("speed2.exe")) name = "SPEED2.EXE";
+                    File out = new File(root, name);
+                    long size = -1;
+                    try (AssetFileDescriptor fd = getAssets().openFd(asset)) { size = fd.getLength(); }
+                    catch (IOException compressed) { /* length unknown: always copy */ }
+                    // A partly unpacked game resumes where it stopped.
+                    if (size >= 0 && out.isFile() && out.length() == size) continue;
+                    File parent = out.getParentFile();
+                    if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+                        throw new IOException("Не удалось создать папку " + parent);
+                    File part = new File(out.getPath() + ".part");
+                    try (InputStream in = getAssets().open(asset); OutputStream dst = new FileOutputStream(part)) {
+                        for (int n; (n = in.read(buffer)) > 0; ) dst.write(buffer, 0, n);
+                    }
+                    if (out.exists() && !out.delete()) throw new IOException("Не удалось заменить " + out);
+                    if (!part.renameTo(out)) throw new IOException("Не удалось записать " + out);
+                    int percent = (i + 1) * 100 / files.size();
+                    String text = "Распаковка файлов игры: " + percent + "% (" + (i + 1) + " из " + files.size() + ")";
+                    main.post(() -> { extractStatus = text; if (extracting) status.setText(text); });
+                }
+                Files.write(bundleMarker().toPath(), bundleStamp().getBytes(StandardCharsets.UTF_8));
+                main.post(() -> { extracting = false; refresh(); });
+            } catch (Exception error) {
+                main.post(() -> {
+                    extracting = false;
+                    extractFailed = true;
+                    refresh();
+                    message("Файлы игры", "Не удалось распаковать файлы игры: " + error.getMessage()
+                            + "\n\nПроверьте, что во внутренней памяти свободно не меньше 2 ГБ, и откройте приложение снова.");
+                });
+            }
+        });
     }
 
     private void refreshOptions() {
@@ -208,16 +303,16 @@ public final class LauncherActivity extends Activity {
         GpuDrivers.Driver driver = GpuDrivers.selected(this);
         // Custom drivers (libadrenotools) exist only in the 64-bit build.
         if (android.os.Process.is64Bit())
-            optionsList.addView(optionRow("Vulkan driver", driver == null ? "System default" : driver.name, this::chooseDriver));
-        optionsList.addView(optionRow("Test driver", "GPU and Vulkan features", () -> probeDriver(false)));
-        optionsList.addView(optionRow("Language", languageLabel(), this::chooseLanguage));
-        optionsList.addView(optionRow("Reset graphics cache", "Recompile shaders", () -> GraphicsCache.prompt(this)));
+            optionsList.addView(optionRow("Драйвер Vulkan", driver == null ? "Системный по умолчанию" : driver.name, this::chooseDriver));
+        optionsList.addView(optionRow("Тест драйвера", "Возможности GPU и Vulkan", () -> probeDriver(false)));
+        optionsList.addView(optionRow("Язык", languageLabel(), this::chooseLanguage));
+        optionsList.addView(optionRow("Сбросить кэш графики", "Перекомпилировать шейдеры", () -> GraphicsCache.prompt(this)));
         for (GameOptions.Option option : GameOptions.ALL)
             optionsList.addView(optionRow(option.title, option.label(GameOptions.get(this, option.key)), () -> chooseOption(option)));
-        optionsList.addView(optionRow("Online server", GameOptions.onlineServer(this), this::chooseOnlineServer));
-        optionsList.addView(optionRow("Check for updates",
-                checkingUpdates ? "Checking GitHub…" : "Version " + ReleaseUpdates.installed(this), () -> checkUpdates(true)));
-        optionsList.addView(optionRow("Report an issue", "Full log to GitHub", () -> prepareReport(null)));
+        optionsList.addView(optionRow("Онлайн-сервер", GameOptions.onlineServer(this), this::chooseOnlineServer));
+        optionsList.addView(optionRow("Проверить обновления",
+                checkingUpdates ? "Проверка GitHub…" : "Версия " + ReleaseUpdates.installed(this), () -> checkUpdates(true)));
+        optionsList.addView(optionRow("Сообщить о проблеме", "Полный лог на GitHub", () -> prepareReport(null)));
     }
 
     // ---- Options ---------------------------------------------------------------------------------------
@@ -238,18 +333,18 @@ public final class LauncherActivity extends Activity {
 
     private void chooseLanguage() {
         List<String[]> found = allowed() ? languages() : new ArrayList<>();
-        if (found.isEmpty()) { message("Language", "No languages found in internal storage/nfsu2/LANGUAGES."); return; }
+        if (found.isEmpty()) { message("Язык", "Не найдены языки во внутреннем хранилище/nfsu2/LANGUAGES."); return; }
         String[] names = new String[found.size()];
         int checked = 0;
         for (int i = 0; i < names.length; i++) {
             names[i] = found.get(i)[0];
             if (found.get(i)[1].equals(GameOptions.language(this))) checked = i;
         }
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Language")
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Язык")
                 .setSingleChoiceItems(names, checked, (dialog, which) -> {
                     GameOptions.prefs(this).edit().putString(GameOptions.LANGUAGE, found.get(which)[1]).apply();
                     dialog.dismiss(); refreshOptions();
-                }).setNegativeButton("Cancel", null).show();
+                }).setNegativeButton("Отмена", null).show();
     }
 
     private void chooseOption(GameOptions.Option option) {
@@ -260,7 +355,7 @@ public final class LauncherActivity extends Activity {
                 .setSingleChoiceItems(option.labels, checked, (dialog, which) -> {
                     GameOptions.set(this, option.key, option.values[which]);
                     dialog.dismiss(); refreshOptions();
-                }).setNegativeButton("Cancel", null).show();
+                }).setNegativeButton("Отмена", null).show();
     }
 
     private void chooseOnlineServer() {
@@ -273,46 +368,46 @@ public final class LauncherActivity extends Activity {
         int pad = (int) (20 * getResources().getDisplayMetrics().density);
         box.setPadding(pad, pad / 2, pad, 0);
         box.addView(input);
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Online server")
-                .setMessage("Online mode (EA Nation) connects to this community server instead of EA's retired servers.")
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Онлайн-сервер")
+                .setMessage("Онлайн-режим (EA Nation) подключается к этому серверу сообщества вместо закрытых серверов EA.")
                 .setView(box)
-                .setPositiveButton("Save", (dialog, which) -> {
+                .setPositiveButton("Сохранить", (dialog, which) -> {
                     String value = input.getText().toString().trim();
-                    if (!GameOptions.validServer(value)) { message("Online server", "\"" + value + "\" is not a valid server name."); return; }
+                    if (!GameOptions.validServer(value)) { message("Онлайн-сервер", "«" + value + "» — недопустимое имя сервера."); return; }
                     GameOptions.prefs(this).edit().putString(GameOptions.ONLINE_SERVER, value).apply();
                     refreshOptions();
                 })
-                .setNeutralButton("Restore", (dialog, which) -> {
+                .setNeutralButton("Восстановить", (dialog, which) -> {
                     GameOptions.prefs(this).edit().remove(GameOptions.ONLINE_SERVER).apply();
                     refreshOptions();
                 })
-                .setNegativeButton("Cancel", null).show();
+                .setNegativeButton("Отмена", null).show();
     }
 
     private void chooseDriver() {
         List<GpuDrivers.Driver> drivers = GpuDrivers.list(this);
         String[] names = new String[drivers.size() + 1];
-        names[0] = "System driver";
+        names[0] = "Системный драйвер";
         int selected = 0;
         for (int i = 0; i < drivers.size(); ++i) {
             names[i + 1] = drivers.get(i).name;
             if (drivers.get(i).id.equals(GpuDrivers.selectedId(this))) selected = i + 1;
         }
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Vulkan driver")
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Драйвер Vulkan")
                 .setSingleChoiceItems(names, selected, (dialog, which) -> {
                     GpuDrivers.select(this, which == 0 ? "" : drivers.get(which - 1).id);
                     refreshOptions(); dialog.dismiss();
                 })
-                .setPositiveButton("Import ZIP", (dialog, which) -> startActivityForResult(
+                .setPositiveButton("Импорт ZIP", (dialog, which) -> startActivityForResult(
                         new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),
                         REQUEST_DRIVER_ZIP))
-                .setNeutralButton("Delete selected", (dialog, which) -> {
+                .setNeutralButton("Удалить выбранный", (dialog, which) -> {
                     GpuDrivers.Driver driver = GpuDrivers.selected(this);
                     if (driver == null) return;
                     try { GpuDrivers.remove(this, driver); refreshOptions(); }
-                    catch (java.io.IOException error) { message("Vulkan driver", error.getMessage()); }
+                    catch (java.io.IOException error) { message("Драйвер Vulkan", error.getMessage()); }
                 })
-                .setNegativeButton("Back", null).show();
+                .setNegativeButton("Назад", null).show();
     }
 
     private void probeDriver(boolean thenPlay) {
@@ -328,38 +423,38 @@ public final class LauncherActivity extends Activity {
             boolean failed = gpu.optBoolean("driverLoadFailed") || gpu.has("probeError");
             if (playAfterProbe && !failed && gpu.optBoolean("compatible")) { playAfterProbe = false; launch(); return; }
             playAfterProbe = false;
-            String text = failed ? "Could not use driver: " + gpu.optString("probeError", "error initializing Vulkan.")
+            String text = failed ? "Не удалось использовать драйвер: " + gpu.optString("probeError", "ошибка инициализации Vulkan.")
                     : "GPU: " + gpu.optString("gpu") + "\nVulkan: " + gpu.optString("vulkan")
-                      + "\nDriver: " + gpu.optString("driverName", "—") + " " + gpu.optString("driverInfo", "")
-                      + "\nBC Textures: " + (gpu.optBoolean("bcTextures") ? "on GPU" : "converted on CPU")
+                      + "\nДрайвер: " + gpu.optString("driverName", "—") + " " + gpu.optString("driverInfo", "")
+                      + "\nBC-текстуры: " + (gpu.optBoolean("bcTextures") ? "на GPU" : "конвертируются на CPU")
                       + (gpu.optString("vertexFormatsMissing").isEmpty() ? ""
-                              : "\nUnsupported vertex types: " + gpu.optString("vertexFormatsMissing"))
-                      + "\n" + (gpu.optBoolean("compatible") ? "Compatible with the game."
-                              : "Missing features: " + gpu.optJSONArray("missing"));
+                              : "\nНеподдерживаемые типы вершин: " + gpu.optString("vertexFormatsMissing"))
+                      + "\n" + (gpu.optBoolean("compatible") ? "Совместим с игрой."
+                              : "Отсутствуют возможности: " + gpu.optJSONArray("missing"));
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("Vulkan driver test").setMessage(text).setPositiveButton("OK", null)
-                    .setNeutralButton("Use system driver", (dialog, which) -> { GpuDrivers.select(this, ""); refreshOptions(); })
+                    .setTitle("Тест драйвера Vulkan").setMessage(text).setPositiveButton("ОК", null)
+                    .setNeutralButton("Использовать системный драйвер", (dialog, which) -> { GpuDrivers.select(this, ""); refreshOptions(); })
                     .show();
-        } catch (Exception error) { message("Vulkan driver test", "Invalid diagnostic: " + error.getMessage()); }
+        } catch (Exception error) { message("Тест драйвера Vulkan", "Некорректная диагностика: " + error.getMessage()); }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_DRIVER_PROBE) {
             showDriverReport(resultCode == RESULT_OK && data != null ? data.getStringExtra("gpu_report")
-                    : "{\"probeError\":\"Test was closed or cancelled.\",\"driverLoadFailed\":true}");
+                    : "{\"probeError\":\"Тест закрыт или отменён.\",\"driverLoadFailed\":true}");
         } else if (requestCode == REQUEST_DRIVER_ZIP && resultCode == RESULT_OK && data != null && data.getData() != null) {
             Uri zip = data.getData();
-            status.setText("Importing Vulkan driver…");
+            status.setText("Импорт драйвера Vulkan…");
             worker.execute(() -> {
                 try {
                     GpuDrivers.Driver driver = GpuDrivers.importZip(this, zip);
                     main.post(() -> {
                         GpuDrivers.select(this, driver.id); refresh();
-                        status.setText("Driver imported: " + driver.name + ". Use Test driver to verify.");
+                        status.setText("Драйвер импортирован: " + driver.name + ". Проверьте через «Тест драйвера».");
                     });
                 } catch (Exception error) {
-                    main.post(() -> { refresh(); message("Vulkan driver", "Could not import driver: " + error.getMessage()); });
+                    main.post(() -> { refresh(); message("Драйвер Vulkan", "Не удалось импортировать драйвер: " + error.getMessage()); });
                 }
             });
         }
@@ -375,21 +470,21 @@ public final class LauncherActivity extends Activity {
             checkingUpdates = false;
             if (isFinishing() || isDestroyed()) return;
             refreshOptions();
-            if (result.error != null) { if (manual) message("Updates", result.error); return; }
+            if (result.error != null) { if (manual) message("Обновления", result.error); return; }
             if (!ReleaseVersion.newer(result.tag, ReleaseUpdates.installed(this))) {
-                if (manual) message("Updates", "You have version " + ReleaseUpdates.installed(this)
-                        + ". There is no newer version on GitHub.");
+                if (manual) message("Обновления", "У вас версия " + ReleaseUpdates.installed(this)
+                        + ". На GitHub нет более новой версии.");
                 return;
             }
             android.content.SharedPreferences updates = ReleaseUpdates.prefs(this);
             if (!manual && result.tag.equals(updates.getString("notified_tag", ""))) return;
             updates.edit().putString("notified_tag", result.tag).apply();
             new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("New version available: " + result.tag)
-                    .setMessage("You can download it from GitHub or continue playing with this version. Install the APK over "
-                            + "the current one to keep your saves and settings.")
-                    .setPositiveButton("Update", (dialog, which) -> openUrl(Uri.parse(result.url)))
-                    .setNegativeButton("Later", null).show();
+                    .setTitle("Доступна новая версия: " + result.tag)
+                    .setMessage("Её можно скачать с GitHub или продолжить играть в текущей версии. Установите APK поверх "
+                            + "текущего, чтобы сохранить сохранения и настройки.")
+                    .setPositiveButton("Обновить", (dialog, which) -> openUrl(Uri.parse(result.url)))
+                    .setNegativeButton("Позже", null).show();
         });
     }
 
@@ -399,7 +494,7 @@ public final class LauncherActivity extends Activity {
      * and the player is told where the ZIP is to attach it.
      */
     private void prepareReport(String crash) {
-        status.setText("Preparing log report…");
+        status.setText("Подготовка отчёта…");
         worker.execute(() -> {
             try {
                 File report = Diagnostics.createReport(this);
@@ -408,22 +503,22 @@ public final class LauncherActivity extends Activity {
                 main.post(() -> {
                     refresh();
                     new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("Report on GitHub")
-                            .setMessage("Full report saved to:\n" + location
-                                    + "\n\nThe issue will open on GitHub with a technical summary already filled in. Describe what happened and, "
-                                    + "if possible, attach this ZIP file (GitHub does not allow automatic attachments).")
-                            .setPositiveButton("Open GitHub", (dialog, which) -> openUrl(issue))
-                            .setNegativeButton("Cancel", null).show();
+                            .setTitle("Сообщить на GitHub")
+                            .setMessage("Полный отчёт сохранён в:\n" + location
+                                    + "\n\nНа GitHub откроется issue с уже заполненной технической сводкой. Опишите, что произошло, и, "
+                                    + "если возможно, приложите этот ZIP-файл (GitHub не позволяет прикреплять файлы автоматически).")
+                            .setPositiveButton("Открыть GitHub", (dialog, which) -> openUrl(issue))
+                            .setNegativeButton("Отмена", null).show();
                 });
             } catch (Exception error) {
-                main.post(() -> { refresh(); message("Report an issue", "Could not prepare report: " + error.getMessage()); });
+                main.post(() -> { refresh(); message("Сообщить о проблеме", "Не удалось подготовить отчёт: " + error.getMessage()); });
             }
         });
     }
 
     private void openUrl(Uri uri) {
         try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
-        catch (android.content.ActivityNotFoundException error) { message("GitHub", "No browser found to open " + uri); }
+        catch (android.content.ActivityNotFoundException error) { message("GitHub", "Не найден браузер для открытия " + uri); }
     }
 
     // ---- Launch ----------------------------------------------------------------------------------------
@@ -486,7 +581,7 @@ public final class LauncherActivity extends Activity {
     // ---- Widgets ---------------------------------------------------------------------------------------
 
     private void addCheck(String name, boolean ok, boolean required) {
-        TextView row = label((ok ? "✓  " : required ? "✗  " : "!  ") + name + (ok || required ? "" : " · optional"), 13,
+        TextView row = label((ok ? "✓  " : required ? "✗  " : "!  ") + name + (ok || required ? "" : " · необязательно"), 13,
                 ok ? 0xFF7CD992 : required ? 0xFFFF6B6B : 0xFFFFC857, false);
         row.setPadding(0, dp(2), 0, dp(2));
         checksList.addView(row);
@@ -553,7 +648,7 @@ public final class LauncherActivity extends Activity {
 
     private void message(String title, String text) {
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle(title).setMessage(text).setPositiveButton("OK", null).show();
+                .setTitle(title).setMessage(text).setPositiveButton("ОК", null).show();
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }

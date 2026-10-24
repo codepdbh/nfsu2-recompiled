@@ -1,8 +1,8 @@
-# Threading
+# Многопоточность
 
-## What SPEED2.EXE uses (direct call sites through the IAT)
+## Что использует SPEED2.EXE (прямые места вызова через IAT)
 
-| API | sites | | API | sites |
+| API | мест | | API | мест |
 |---|---|---|---|---|
 | CreateThread | 6 | | WaitForSingleObject | 19 |
 | ExitThread / TerminateThread | 1 / 1 | | WaitForMultipleObjects | 1 |
@@ -11,45 +11,51 @@
 | GetExitCodeThread | 1 | | CreateEventA / SetEvent / ResetEvent | 2 / 4 / 2 |
 | TlsAlloc / TlsGetValue / TlsSetValue | 1 / 3 / 4 | | InterlockedExchange | 6 |
 | timeSetEvent / timeKillEvent | 1 / 1 | | Sleep / SleepEx | 11 / 3 |
-| SetProcessAffinityMask | 2 | | `lock`-prefixed instructions in code | 0 |
+| SetProcessAffinityMask | 2 | | инструкции с префиксом `lock` в коде | 0 |
 
-No `_beginthread(ex)` import: the static CRT's thread wrappers, if linked, end
-in CreateThread. Which subsystems own the 6 threads (streaming loader, audio,
-online, input) is still to be identified at runtime.
+Импорта `_beginthread(ex)` нет: если обёртки потоков статического CRT и
+слинкованы, они всё равно заканчиваются вызовом CreateThread. Какие
+подсистемы владеют этими 6 потоками (загрузчик стриминга, звук, онлайн,
+ввод), ещё предстоит выяснить в рантайме.
 
-## Model for the Windows bring-up
+## Модель для Windows bring-up
 
-pcrecomp `native32`, unchanged in principle:
+pcrecomp `native32`, принципиально без изменений:
 
-- The register file is **global**, guarded by one machine lock. A thread owns
-  it while running lifted code and releases it around every native call
-  (`native_bridge` calls `mach_leave`/`mach_enter`), so a guest thread blocked in
-  `WaitForSingleObject`, `Sleep` or `EnterCriticalSection` does not block the
-  others.
-- Every guest thread gets **its own saved register state, guest stack (4 MB)
-  and simulated TIB** on first entry (`mstate` in TLS). This is the
-  "independent CPU context per thread" requirement, executed one at a time.
-- Lifted loops yield the lock every 65,536 back-edges (`RECOMP_BACKEDGE`), so a
-  spin-wait on another guest thread's flag cannot starve it.
-- `CreateThread` is shimmed to give the host thread a 16 MB stack (each guest
-  call is a host C call, so frames are larger than the original).
-- Thread starts and `timeSetEvent` callbacks are guest VAs: Windows calls
-  them, the fetch faults on the non-executable guest image, and native32's
-  vectored handler redirects into the lifted body on that thread.
+- Файл регистров **глобальный** и защищён одним локом машины. Поток владеет
+  им, пока выполняет lifted-код, и отпускает вокруг каждого нативного
+  вызова (`native_bridge` вызывает `mach_leave`/`mach_enter`), поэтому
+  guest-поток, заблокированный в `WaitForSingleObject`, `Sleep` или
+  `EnterCriticalSection`, не блокирует остальные.
+- Каждый guest-поток при первом входе получает **собственное сохранённое
+  состояние регистров, guest-стек (4 МБ) и симулированный TIB** (`mstate` в
+  TLS). Это и есть требование «независимый контекст CPU на поток», которые
+  выполняются по очереди, один за раз.
+- Lifted-циклы отдают лок каждые 65,536 обратных переходов
+  (`RECOMP_BACKEDGE`), поэтому spin-wait на флаге другого guest-потока не
+  может заморить его голодом.
+- `CreateThread` шимится, чтобы дать хостовому потоку стек 16 МБ (каждый
+  guest-вызов — это хостовый вызов C, поэтому фреймы крупнее, чем в
+  оригинале).
+- Точки старта потоков и колбэки `timeSetEvent` — это guest-адреса: Windows
+  вызывает их, выборка инструкции падает на неисполняемом guest-образе, и
+  векторный обработчик native32 перенаправляет выполнение в lifted-тело на
+  этом потоке.
 
-## Known risks
+## Известные риски
 
-- **SuspendThread** on a thread that holds the machine lock deadlocks every
-  guest thread. One site exists; it must be checked when reached.
-- `SetProcessAffinityMask` (2 sites) may pin the process to one core; harmless
-  under the machine lock, but it should be logged.
-- No `lock` prefixes and only `InterlockedExchange` imports: guest atomics are
-  serialised by the machine lock already.
+- **SuspendThread** на потоке, который держит лок машины, приводит к
+  дедлоку все guest-потоки. Такое место в коде одно; его нужно проверить,
+  когда до него дойдёт исполнение.
+- `SetProcessAffinityMask` (2 места) может закрепить процесс за одним
+  ядром; под локом машины это безвредно, но стоит логировать.
+- Префиксов `lock` нет, из атомарных импортов — только `InterlockedExchange`:
+  guest-атомики и так уже сериализуются локом машины.
 
-## Toward ARM64
+## На пути к ARM64
 
-The machine lock makes the guest effectively single-core. For the Android host
-the plan is to make the register file thread-local (`_Thread_local` /
-per-thread CPU block) and drop the global lock, with guest synchronisation
-mapped onto host primitives by the HLE layer. Nothing in the generated C
-depends on the lock; only native32 does.
+Лок машины фактически делает guest-сторону однопоточной (на уровне ядра).
+Для хоста Android план — сделать файл регистров потоково-локальным
+(`_Thread_local` / блок CPU на поток) и убрать глобальный лок, а
+guest-синхронизацию отображать на примитивы хоста через слой HLE. От лока
+зависит только native32 — ничего в сгенерированном C от него не зависит.

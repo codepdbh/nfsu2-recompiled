@@ -1,51 +1,54 @@
-# Portable guest integration
+# Портируемая гостевая интеграция
 
-Current status: [0.4.0 device report](ANDROID_INPUT_AUDIO_TEST.md). Portable
-heaps, serialized guest threads, TLS, files/resources, virtual Windows windows,
-D3D9/DXVK, initial DirectInput and PCM/AAudio services are implemented. The
-original initial splash renders on Android. Menu, races and complete API/lifecycle
-coverage remain unfinished. Sections below record the earlier first connection.
+Текущий статус: [отчёт по устройству 0.4.0](ANDROID_INPUT_AUDIO_TEST.md). Реализованы
+портируемые кучи, сериализованные гостевые потоки, TLS, файлы/ресурсы, виртуальные окна
+Windows, D3D9/DXVK, первичный DirectInput и сервисы PCM/AAudio. Исходный стартовый сплэш
+отрисовывается на Android. Меню, гонки и полное покрытие API/жизненного цикла остаются
+незавершёнными. Разделы ниже фиксируют более раннее первое подключение.
 
-The Android target now compiles and links the complete locally generated
-`recomp_*.c` sources and dispatch table into `libnfsu2_android.so` for AArch64.
-It uses a separate portable host, not Windows `native32` or host x86 execution.
+Сборка под Android теперь компилирует и линкует полный набор локально сгенерированных
+исходников `recomp_*.c` и таблицу диспетчеризации в `libnfsu2_android.so` для AArch64.
+Используется отдельный портируемый хост, а не Windows `native32` и не исполнение x86 на
+хосте.
 
-## Implemented connection
+## Реализованное подключение
 
-- PE32 parser copies headers/sections from Internal storage/nfsu2/SPEED2.EXE
-  into the reserved guest address space and validates the expected image layout.
-- Guest virtual addresses remain at 0x00400000. `ADDR` adds the host mapping
-  offset; RECOMP_FLAT_MEMORY and RECOMP_NATIVE_RANGE are not enabled.
-- IAT slots receive synthetic 32-bit addresses for DLL-qualified HLE imports;
-  they never contain ARM64 function pointers.
-- Generated dispatch resolves guest functions. Unsupported indirect calls,
-  instructions and imports produce a named integration boundary.
-- Existing documented manual overrides are reused from src/runtime/overrides.c.
-- Complete integer, segment, x87, MMX, XMM, MXCSR and published-flags snapshots
-  protect explicit guest calls; a recursive machine lock serializes them.
-- Initial 16 MiB guest stack and TIB, with SEH-list sentinel/stack bounds/self.
-  This is single-thread startup bring-up; guest thread creation, fair yielding
-  and guest SEH execution are not implemented yet.
-- Android-specific generated-C adapter supplies a monotonic virtual 1 GHz
-  RDTSC and a virtual CPUID contract. It advertises only the selected legacy
-  x86/MMX/SSE/SSE2 subset and no 3DNow, AVX or SSE3.
-- The first HLE implementations answer GetVersionExA (XP guest environment)
-  and GetModuleHandleA(NULL). HeapCreate and other services stop explicitly.
-- Startup exercises the real lifted sub_00401000 copy routine over seven
-  lengths, checking output, buffer boundary, cdecl cleanup and caller state.
-  It then calls the actual generated CRT entry 0x0075BCC7 until the first
-  unsupported HLE operation. No replacement game loop or mock WinMain.
+- Парсер PE32 копирует заголовки/секции из Internal storage/nfsu2/SPEED2.EXE в
+  зарезервированное гостевое адресное пространство и проверяет ожидаемую раскладку образа.
+- Гостевые виртуальные адреса остаются с базой 0x00400000. `ADDR` добавляет смещение
+  хостового маппинга; RECOMP_FLAT_MEMORY и RECOMP_NATIVE_RANGE не включены.
+- Слоты IAT получают синтетические 32-битные адреса для HLE-импортов с указанием DLL;
+  они никогда не содержат указатели на функции ARM64.
+- Сгенерированная диспетчеризация разрешает гостевые функции. Неподдерживаемые косвенные
+  вызовы, инструкции и импорты формируют именованную границу интеграции.
+- Существующие задокументированные ручные переопределения переиспользуются из
+  src/runtime/overrides.c.
+- Полные снимки целочисленных регистров, сегментных, x87, MMX, XMM, MXCSR и
+  опубликованных флагов защищают явные гостевые вызовы; рекурсивная блокировка машины
+  сериализует их.
+- Начальный гостевой стек 16 МиБ и TIB, с сентинелом SEH-списка/границами стека/self.
+  Это однопоточный bring-up запуска; создание гостевых потоков, честное переключение
+  (fair yielding) и выполнение гостевого SEH пока не реализованы.
+- Специфичный для Android адаптер сгенерированного C предоставляет монотонный
+  виртуальный RDTSC на 1 ГГц и виртуальный контракт CPUID. Он заявляет только выбранное
+  legacy-подмножество x86/MMX/SSE/SSE2 и не заявляет 3DNow, AVX или SSE3.
+- Первые реализации HLE отвечают на GetVersionExA (гостевое окружение XP) и
+  GetModuleHandleA(NULL). HeapCreate и другие сервисы явно останавливают выполнение.
+- Запуск прогоняет реальную поднятую копирующую процедуру sub_00401000 на семи разных
+  длинах, проверяя вывод, границы буфера, cdecl-очистку и состояние вызывающей стороны.
+  Затем вызывается настоящая сгенерированная точка входа CRT 0x0075BCC7 до первой
+  неподдерживаемой HLE-операции. Нет ни замещающего игрового цикла, ни фиктивного WinMain.
 
-## Build / validation
+## Сборка / проверка
 
-`android/gradlew.bat assembleDebug` now requires locally generated game C and
-produces version 0.2.0-runtime. The first full ARM64 compilation completed in
-3m35s. Host sources compile with warnings treated as errors; generated sources
-use -O0, -fno-strict-aliasing, -fexceptions and disabled FP contraction.
+`android/gradlew.bat assembleDebug` теперь требует локально сгенерированный C-код игры
+и собирает версию 0.2.0-runtime. Первая полная компиляция под ARM64 заняла 3 мин 35 с.
+Хостовые исходники компилируются с предупреждениями как ошибками; сгенерированные
+исходники используют -O0, -fno-strict-aliasing, -fexceptions и отключённое FP contraction.
 
-`tests/android_runtime` builds the exact same memory/PE/dispatch/callback
-implementation as a headless Linux 64-bit executable. It is a useful additional
-host check, not a substitute for device ARM64 or Vulkan testing:
+`tests/android_runtime` собирает ту же самую реализацию памяти/PE/диспетчеризации/колбэков
+в виде headless-исполняемого файла для Linux 64-bit. Это полезная дополнительная проверка
+на хосте, но не замена тестированию на устройстве с ARM64 или Vulkan:
 
 ```sh
 cmake -S tests/android_runtime -B /tmp/nfsu2-runtime-check -G Ninja \
@@ -54,33 +57,33 @@ cmake --build /tmp/nfsu2-runtime-check -j2
 /tmp/nfsu2-runtime-check/runtime_check '/path/to/SPEED2.EXE'
 ```
 
-The headless test passed on Linux x86-64: 252 imports bound, all 27,742 functions
-linked, seven real lifted-copy cases passed, and actual CRT entry called
-GetVersionExA and GetModuleHandleA before reaching HeapCreate from 0x007620A1.
-This verifies 32-bit guest offsets on a 64-bit host and the initial call/return
-path. After the phone was reconnected, version 0.2.0 was installed and executed
-on the Samsung SM-S938B / Adreno 830. The ARM64 test reproduced the same 252
-imports, seven lifted-copy cases and CRT boundary at HeapCreate / 0x007620A1.
-Home/return resumed Vulkan presentation; the resumed segment reached 600 frames
-without an observed app-specific crash. The status overlay was visually
-verified. Device evidence: workspace work/android-runtime-device-test.log and
-work/android-runtime-device.png. The older report describes bootstrap 0.1.0.
+Headless-тест прошёл на Linux x86-64: связано 252 импорта, слинковано все 27 742 функции,
+прошли все семь реальных случаев поднятого копирования, а настоящая точка входа CRT
+вызвала GetVersionExA и GetModuleHandleA перед тем, как дойти до HeapCreate из 0x007620A1.
+Это подтверждает корректность 32-битных гостевых смещений на 64-битном хосте и
+первоначальный путь вызова/возврата. После повторного подключения телефона версия 0.2.0
+была установлена и запущена на Samsung SM-S938B / Adreno 830. Тест на ARM64 воспроизвёл
+те же 252 импорта, семь случаев поднятого копирования и границу CRT на HeapCreate /
+0x007620A1. Home/возврат возобновили презентацию Vulkan; возобновлённый сегмент достиг
+600 кадров без замеченного краша, специфичного для приложения. Оверлей статуса был
+визуально подтверждён. Доказательства с устройства: workspace work/android-runtime-device-test.log
+и work/android-runtime-device.png. В более старом отчёте описан bootstrap 0.1.0.
 
-Use `bash tests/android_runtime/run.sh [path/to/SPEED2.EXE]` for reproducible
-host checks. The script keeps its build in the user's cache directory and runs
-the test in the same session. Runtime evidence is stored locally in workspace
+Используйте `bash tests/android_runtime/run.sh [path/to/SPEED2.EXE]` для воспроизводимых
+проверок на хосте. Скрипт хранит свою сборку в пользовательском кэш-каталоге и запускает
+тест в той же сессии. Данные о запуске сохраняются локально в workspace
 `work/android-runtime-host-test.log`.
 
-The current runtime APK includes binary-derived generated game code, unlike
-the earlier bootstrap. It is a local artifact from the owner's copy; source
-generation and build products remain gitignored. No game data are embedded.
+Текущий рантайм-APK включает код игры, полученный из бинарника, в отличие от более раннего
+bootstrap. Это локальный артефакт из копии владельца; генерация исходников и продукты
+сборки по-прежнему в gitignore. Игровые данные не встроены.
 
-## Next boundaries
+## Следующие границы
 
-Implement guest heaps/handles, TLS, environment and CRT services according to
-the measured startup call sequence; retain strict failures instead of no-op
-imports. Then add files, timers and guest threads, Android window/input/audio
-services, and a COM/D3D9 adapter feeding the Vulkan 1.1 renderer. The Vulkan
-backend currently presents its diagnostic clear only; guest draw calls are
-not connected. Game execution must move to a controlled worker before it can
-run indefinitely alongside Android lifecycle events.
+Реализовать гостевые кучи/хендлы, TLS, окружение и сервисы CRT согласно измеренной
+последовательности вызовов при запуске; сохранять строгие отказы вместо no-op импортов.
+Затем добавить файлы, таймеры и гостевые потоки, сервисы окна/ввода/аудио для Android,
+и адаптер COM/D3D9, питающий рендерер Vulkan 1.1. Бэкенд Vulkan сейчас презентует только
+свою диагностическую очистку; гостевые вызовы отрисовки пока не подключены. Выполнение
+игры должно переехать в управляемый worker, прежде чем оно сможет работать бесконечно
+наряду с событиями жизненного цикла Android.

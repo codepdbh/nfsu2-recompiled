@@ -1,30 +1,34 @@
-# Signed narrow flags: MSVC regression
+# Узкие знаковые флаги: регрессия MSVC
 
 2026-10-07, Windows x86, MSVC 19.51.36257.
 
-The existing crash reports `crash_20261007_113940.txt` and
-`crash_20261007_114807.txt` both show a null read in `sub_005E5110`.
-Symbolization and host disassembly locate the latter at the translated guest
-instruction `0x005E5292` (`mov edx,[ecx+0x10]`), after a failed list lookup.
+Оба существующих отчёта о крашах, `crash_20261007_113940.txt` и
+`crash_20261007_114807.txt`, показывают чтение по null-указателю в `sub_005E5110`.
+Символизация и дизассемблирование на хосте указывают на транслированную гостевую
+инструкцию `0x005E5292` (`mov edx,[ecx+0x10]`), которая выполняется после
+неудачного поиска в списке.
 
-Earlier in this function, `test bx,bx; jle` at `0x005E5223`/`0x005E5226`
-must skip zero and negative 16-bit identifiers. The generated C captures
-each operand as `(uint32_t)(uint16_t)value << 16` and uses a signed test of
-the AND result. MSVC `/O1` instead emits a zero-extended word test followed
-by `je`, omitting the negative case. The crash has `BX=0xFFFF`; the invalid
-identifier proceeds into the list lookup and reaches the null read.
+Чуть раньше в этой же функции `test bx,bx; jle` по адресам
+`0x005E5223`/`0x005E5226` должен пропускать нулевые и отрицательные 16-битные
+идентификаторы. Сгенерированный код на C берёт каждый операнд как
+`(uint32_t)(uint16_t)value << 16` и делает знаковую проверку результата AND.
+MSVC `/O1` вместо этого генерирует проверку слова с нулевым расширением и
+последующий `je`, упуская отрицательный случай. В крашe `BX=0xFFFF`; невалидный
+идентификатор проходит дальше, попадает в поиск по списку и доходит до чтения
+по null.
 
-A minimal independent reproducer also misclassifies `0x8000` and `0xFFFF`
-with this compiler. This is an observed optimization discrepancy, not an
-inference based solely on the crash address.
+Минимальный независимый репродьюсер тоже неверно классифицирует `0x8000` и
+`0xFFFF` на этом компиляторе. Это подтверждённое расхождение в работе
+оптимизатора, а не вывод, сделанный исключительно по адресу краша.
 
-The runtime workaround tests the sign bit explicitly and uses unsigned,
-sign-biased ordering for signed comparisons. It changes no game data and
-does not bypass the failed lookup or substitute game functions.
+Обходное решение в рантайме явно проверяет знаковый бит и использует
+беззнаковый порядок со смещением по знаку для знаковых сравнений. Оно не
+меняет игровые данные, не обходит неудачный поиск и не подменяет игровые
+функции.
 
-## Reproduction and verification
+## Воспроизведение и проверка
 
-`tests/narrow_flags.c` contains no game code. Compile in an MSVC x86 environment:
+`tests/narrow_flags.c` не содержит игрового кода. Собирается в окружении MSVC x86:
 
 ```sh
 source scripts/vsenv.sh x86
@@ -33,36 +37,39 @@ cl -nologo -O1 -I../pcrecomp/runtime/recomp32 \
 ../work/narrow_flags.exe
 ```
 
-The baseline pcrecomp header produces 32,768 failures with `/O1`. After
-`patches/pcrecomp/0009-recomp_types-explicit-sign-tests-for-signed-conditio.patch`, the
-test produces zero failures with `/Od`, `/O1` and `/O2`, covering every
-16-bit value for sign/zero tests and 458,752 signed comparisons per run.
-Separate non-inlined condition functions matter: combining all flag results
-inside one function can hide this optimization discrepancy.
+Исходный заголовок pcrecomp даёт 32,768 ошибок при `/O1`. После применения
+`patches/pcrecomp/0009-recomp_types-explicit-sign-tests-for-signed-conditio.patch`
+тест проходит без единой ошибки при `/Od`, `/O1` и `/O2`, покрывая все
+16-битные значения для проверок знака/нуля и 458,752 знаковых сравнения за
+прогон. Важно, что функции условий не инлайнятся и разделены: если собрать
+все результаты флагов в одной функции, это расхождение в оптимизации может
+скрыться.
 
-The patch is part of the `git am` series in `patches/pcrecomp`.
+Патч входит в серию `git am` в `patches/pcrecomp`.
 
-Independent re-check (2026-10-07, MSVC 19.51, same test): original header
-0 / 32,768 / 32,768 failures at /Od / /O1 / /O2; patched header 0 / 0 / 0.
-After the fix the recompiled build reaches a race (the attract-mode demo)
-without the 0x005E5110 crash and renders the career-menu car correctly,
-both verified on window captures of the recompiled build.
+Независимая перепроверка (2026-10-07, MSVC 19.51, тот же тест): исходный
+заголовок — 0 / 32,768 / 32,768 ошибок при /Od / /O1 / /O2; патченый заголовок
+— 0 / 0 / 0. После фикса рекомпилированная сборка доходит до гонки (демо в
+attract-режиме) без краша 0x005E5110 и корректно отрисовывает машину в меню
+карьеры — оба факта подтверждены скриншотами окна рекомпилированной сборки.
 
-## Game smoke test after the fix
+## Дымовой тест игры после фикса
 
-- Full CMake/Ninja x86 build completed and linked successfully.
-- `logs/run_20261007_120642.log`: background test with Enter actions at 25,
-  32 and 40 seconds. The process stayed alive for the 55-second test interval
-  and was then stopped deliberately by the test harness.
-- No crash report or NaN/Inf shader-constant diagnostic appeared in that run.
-  The game reached 4,462 presented frames, with later frames containing up to
-  2,048 draws and about 60,521 D3D9 calls per frame. Additional real input
-  events appear in the log during the user's interaction.
-- The user confirmed that this build looks correct, while reporting some lag.
-  This supports visual improvement; a full race and separate professional/quick
-  race regression still need explicit end-to-end verification.
+- Полная сборка CMake/Ninja x86 прошла успешно, линковка без ошибок.
+- `logs/run_20261007_120642.log`: фоновый тест с нажатиями Enter на 25-й,
+  32-й и 40-й секундах. Процесс не падал на протяжении всего 55-секундного
+  тестового интервала, после чего тестовый харнесс остановил его намеренно.
+- За этот прогон не появилось ни одного отчёта о краше и ни одной диагностики
+  NaN/Inf в константах шейдеров. Игра дошла до 4,462 отрисованных кадров,
+  причём в поздних кадрах было до 2,048 draw-вызовов и около 60,521 вызовов
+  D3D9 за кадр. В логе также видны реальные события ввода во время
+  взаимодействия пользователя.
+- Пользователь подтвердил, что сборка выглядит корректно, хотя и отметил
+  лаги. Это подтверждает визуальное улучшение; полную гонку и отдельную
+  регрессию professional/quick race ещё предстоит явно проверить end-to-end.
 
-No texture/material patch was needed for the visual improvement observed by
-the user. Startup BeginStateBlock failures still occur in the log; they were
-not eliminated by this fix. Frame call volume makes bridge/locking overhead
-worth profiling, but it is not yet a measured attribution of the lag.
+Для визуального улучшения, которое заметил пользователь, патч
+текстур/материалов не понадобился. В логе по-прежнему встречаются ошибки
+BeginStateBlock при запуске — этот фикс их не устранил. Количество вызовов
+за кадр делает оправданным профилирование накладных расходов на
+bridge/блокировки, но пока это не измеренная причина лагов.

@@ -1,47 +1,49 @@
-# Differential test report
+# Отчёт о дифференциальном тестировании
 
-Two levels, both "compare against a reference x86, not against expectations".
+Два уровня, оба по принципу «сравниваем с эталонным x86, а не с ожиданиями».
 
-## 1. pcrecomp instruction-level difftest (lift32 + simd32 vs Unicorn)
+## 1. Дифтест pcrecomp на уровне инструкций (lift32 + simd32 против Unicorn)
 
-`python ../pcrecomp/tools/lift/difftest.py` (patched): **246 / 246** cases
-match, including 40 MMX/SSE/SSE2 cases and 4 `lahf` cases added for this
-project.
+`python ../pcrecomp/tools/lift/difftest.py` (с патчем): **246 / 246** кейсов
+совпадают, включая 40 кейсов MMX/SSE/SSE2 и 4 кейса `lahf`, добавленных для
+этого проекта.
 
-## 2. Real SPEED2.EXE functions (`scripts/difftest_real.py`)
+## 2. Реальные функции из SPEED2.EXE (`scripts/difftest_real.py`)
 
-Each selected function is a leaf (no calls, no indirect jumps, no `fs:`, no
-3DNow!, no tail jumps out of its body). The original bytes run in Unicorn
-with the real image mapped; the same function, lifted by our driver, runs as C
-compiled for an **x64** host with the portable `ADDR(va) = va + g_mem_base`
-memory model. Registers, x87 depth/st(0), and every byte written to .data,
-scratch and stack are compared. Cases where both machines fault on random
-pointers are skipped.
+Каждая выбранная функция — лист (без вызовов, без косвенных переходов, без
+`fs:`, без 3DNow!, без хвостовых переходов за пределы своего тела).
+Оригинальные байты выполняются в Unicorn с реальным замапленным образом; та же
+функция, lifted нашим драйвером, выполняется как C, скомпилированный для
+хоста **x64** с портируемой моделью памяти `ADDR(va) = va + g_mem_base`.
+Сравниваются регистры, глубина x87/st(0) и каждый байт, записанный в .data,
+scratch и стек. Случаи, когда обе машины падают на случайных указателях,
+пропускаются.
 
-| Batch | functions | cases tested | passed | failed | skipped |
+| Партия | функций | протестировано кейсов | пройдено | провалено | пропущено |
 |---|---|---|---|---|---|
 | random (seed 2) | 600 | 947 | 940 | 7 | 853 |
 | x87-using (seed 3) | 300 | 505 | 492 | 13 | 395 |
 | SSE-using (seed 4) | 72 | 23 | 23 | 0 | 193 |
 
-Failure reasons:
+Причины провалов:
 
-| Function | What | Verdict |
+| Функция | Что | Вердикт |
 |---|---|---|
-| (many, first run) | `fnstsw ax` lacked the TOP field (bits 11-13) | **lifter bug, fixed** (lift32: TOP = -depth mod 8) |
-| 0x0063E88B (D3DXQuaternionRotationYawPitchRoll) | one float's sign: +0.0 vs -0.0 | numerical: 80-bit `fsincos` vs double, value at zero |
-| 0x007699FB, 0x0076A496 (CRT math/exception) | inf/NaN vs finite on extreme random inputs | CRT edge cases; not reached in normal play |
-| 0x00416905, 0x00768A48, 0x00769DBF, 0x005E1250, 0x00769DCA | Unicorn faults, lifted does not | harness: the lifted code reads guest memory through a 4 GB reservation where Unicorn maps only three regions; not a semantic difference |
+| (многие, первый прогон) | `fnstsw ax` не содержал поле TOP (биты 11-13) | **баг лифтера, исправлен** (lift32: TOP = -depth mod 8) |
+| 0x0063E88B (D3DXQuaternionRotationYawPitchRoll) | знак у одного float: +0.0 против -0.0 | численное расхождение: 80-битный `fsincos` против double, значение в нуле |
+| 0x007699FB, 0x0076A496 (математика/исключения CRT) | inf/NaN против конечного значения при экстремальных случайных входных данных | граничные случаи CRT; не встречаются при обычной игре |
+| 0x00416905, 0x00768A48, 0x00769DBF, 0x005E1250, 0x00769DCA | Unicorn падает, lifted-код — нет | особенность стенда: lifted-код читает память гостя через резервацию 4 ГБ, тогда как Unicorn мапит только три региона; это не семантическое расхождение |
 
-Harness bugs found on the way (fixed): Unicorn's `FPn` registers are
-physical (st(0) is `FP[TOP]`), Unicorn's MXCSR starts at 0 (all SSE exceptions
-unmasked), the x87 depth of the lift32 model is `g_fp_top` itself.
+По ходу найдены баги тестового стенда (исправлены): регистры `FPn` в Unicorn —
+физические (st(0) — это `FP[TOP]`), MXCSR в Unicorn стартует с 0 (все
+исключения SSE не замаскированы), глубина x87 в модели lift32 — это сам
+`g_fp_top`.
 
-## 3. Whole-program oracle (`NFSU2_NATIVE=1`)
+## 3. Оракул целой программы (`NFSU2_NATIVE=1`)
 
-The host can run the ORIGINAL x86 code natively, with the same image
-mapping, import shims and windowed mode (vtable hooks). Same input script
-(`NFSU2_TAP`, `NFSU2_BACKGROUND`): the original reaches a race with the car
-rendered correctly; the recompiled build shows black cars and crashes in
-0x005E5110 when the race loads. The divergence is therefore in the
-recompilation, and is being bisected.
+Хост может выполнять ОРИГИНАЛЬНЫЙ код x86 нативно, с тем же маппингом образа,
+шимами импортов и оконным режимом (хуки vtable). Один и тот же входной скрипт
+(`NFSU2_TAP`, `NFSU2_BACKGROUND`): оригинал доходит до гонки с корректно
+отрендеренной машиной; рекомпилированная сборка показывает чёрные машины и
+падает в 0x005E5110 при загрузке гонки. Расхождение, таким образом, находится
+в рекомпиляции, и сейчас идёт бисекция для его локализации.

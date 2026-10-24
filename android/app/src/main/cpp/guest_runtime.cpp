@@ -520,8 +520,17 @@ void loadImage(const char* path) {
         nt.FileHeader.SizeOfOptionalHeader<sizeof(pe_opt_header32)) throw GuestStop("Expected x86 PE32");
     auto opt=nt.OptionalHeader; imageBase=opt.ImageBase; imageSize=opt.SizeOfImage;
     resourceRva=opt.DataDirectory[2].VirtualAddress;resourceSize=opt.DataDirectory[2].Size;
-    if (imageBase!=0x400000 || imageSize!=0x532000 || opt.AddressOfEntryPoint!=0x35bcc7)
+    if (imageBase!=0x400000 || opt.AddressOfEntryPoint!=0x35bcc7)
         throw GuestStop("PE layout does not match generated NFSU2 code");
+    // No-CD builds can report an unaligned SizeOfImage; map every section in full.
+    {
+        uint64_t sectionsAt=uint64_t(dos.e_lfanew)+24+nt.FileHeader.SizeOfOptionalHeader;
+        for (uint32_t i=0;i<nt.FileHeader.NumberOfSections;++i) {
+            auto sec=fileStruct<pe_section_header>(file,sectionsAt+i*sizeof(pe_section_header));
+            imageSize=std::max(imageSize,sec.VirtualAddress+std::max(sec.VirtualSize,sec.SizeOfRawData));
+        }
+        imageSize=(imageSize+0xfffu)&~0xfffu;
+    }
     memory->commit(imageBase,imageSize);
     imageRange(0,opt.SizeOfHeaders);
     if (opt.SizeOfHeaders>file.size()) throw GuestStop("Truncated PE headers");

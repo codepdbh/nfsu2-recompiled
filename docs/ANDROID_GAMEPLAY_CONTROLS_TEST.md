@@ -1,110 +1,116 @@
-# Android gameplay / controls 0.10.0 — 2026-10-08
+# Android геймплей / управление 0.10.0 — 2026-10-08
 
-The generated audio callback changes described in
-[the menu/profile report](ANDROID_MENU_PROFILE_TEST.md) let the connected
-SM-S938B load Resort Loop, start the countdown and render the race HUD,
-opponents and track. The user confirmed reaching the race.
+Изменения в генерируемом аудио-колбэке, описанные в
+[отчёте по меню/профилю](ANDROID_MENU_PROFILE_TEST.md), позволили подключённому
+SM-S938B загрузить Resort Loop, запустить обратный отсчёт и отрисовать гоночный HUD,
+соперников и трассу. Пользователь подтвердил, что дошёл до гонки.
 
-## Performance changes
+## Изменения производительности
 
-The initial ARM64 reference used `-O0` for the lifted game and Android runtime.
-The first race measured 2.5–2.7 presentation FPS at 1170×540. Both targets now
-use `-O2`, retaining `-fno-strict-aliasing` and disabled floating-point
-contraction. DXVK was already built with `-O2`.
+В исходной эталонной сборке ARM64 использовался `-O0` для портированной игры и рантайма Android.
+Первая гонка показала 2,5–2,7 кадра presentation в секунду при 1170×540. Теперь обе цели
+используют `-O2`, сохраняя `-fno-strict-aliasing` и отключённое сжатие операций с плавающей точкой
+(floating-point contraction). DXVK уже собирался с `-O2`.
 
-Android CMake splits generated units larger than 64 MiB at complete function
-boundaries into roughly 6 MiB units, with six compiler jobs to bound memory.
-The 118 MB unit became 21 units. A reconstruction check verified the same
-400 function definitions, order and full source bodies. Split game C remains
-in the ignored build directory and is never committed.
+CMake для Android разбивает сгенерированные единицы трансляции размером больше 64 МиБ строго по
+границам функций на единицы примерно по 6 МиБ, используя шесть параллельных задач компилятора
+для ограничения расхода памяти. Единица на 118 МБ превратилась в 21 единицу. Проверка
+восстановления подтвердила те же 400 определений функций, тот же порядок и полные тела исходного
+кода. Разбитый C-код игры остаётся в игнорируемой директории сборки и никогда не коммитится.
 
-Runtime checkpoints still check cancellation and foreground pause immediately.
-Full guest-register saves and native thread handovers are amortized: every
-64 checkpoints the runtime checks whether the 500-microsecond scheduling
-interval expired. Blocking imports continue to yield explicitly. The scheduler
-self-test forces 100 handovers independently of this production cadence.
+Контрольные точки рантайма по-прежнему немедленно проверяют отмену и постановку на паузу
+при уходе в фон. Полное сохранение гостевых регистров и передача управления нативным потокам
+амортизированы: каждые 64 контрольные точки рантайм проверяет, истёк ли 500-микросекундный
+интервал планирования. Блокирующие импорты по-прежнему явно уступают управление. Самотест
+планировщика форсирует 100 передач управления независимо от этого продуктивного цикла.
 
-The owner's local Most Wanted Android tree was inspected for comparison:
-its Android CMake enables ThinLTO in Release; its touch view keeps pointer
-ownership and sends state changes; its performance history documents CPU cost
-per draw, native rendering and profiling. This port still uses its own x86
-runtime and D3D9 bridge, rather than the Xbox 360 renderer.
+Для сравнения было изучено локальное дерево владельца с портом Most Wanted на Android:
+его CMake для Android включает ThinLTO в Release-сборке; его touch-экран сохраняет владение
+указателем и рассылает изменения состояния; его история производительности документирует
+стоимость CPU на отрисовку, нативный рендеринг и профилирование. Этот порт по-прежнему
+использует собственный рантайм x86 и мост D3D9, а не рендерер Xbox 360.
 
-## Controls and lifecycle
+## Управление и жизненный цикл
 
-`RacingControlsView` replaces the large flat button rows with a transparent
-Canvas overlay. Menu mode provides navigation, accept, back and profile text.
-The **CONDUCIR** button switches to steering, accelerator, brake, nitro and
-handbrake; **MENÚ** restores navigation. **PAUSA** sends Escape.
-The overlay also follows the installed guest keyboard action map automatically
-when entering/leaving driving mode. Manual mode switching remains available.
-Driving includes up/down shifts and camera selection.
-Each touch pointer owns a control, allowing held controls to coexist.
-Sliding off, cancelling a gesture, opening text input or backgrounding the
-activity releases held keys. Buttons show a pressed state. System bars hide
-while the game has focus and can be temporarily shown by swiping.
+`RacingControlsView` заменяет крупные плоские ряды кнопок прозрачным оверлеем на Canvas.
+Режим меню обеспечивает навигацию, подтверждение, возврат назад и текст профиля.
+Кнопка **CONDUCIR** переключает в режим руления, газа, тормоза, нитро и ручника;
+**MENÚ** возвращает навигацию. **PAUSA** отправляет Escape.
+Оверлей также автоматически следует за установленной гостевой картой действий клавиатуры
+при входе в режим вождения и выходе из него. Ручное переключение режима по-прежнему доступно.
+Вождение включает переключение передач вверх/вниз и выбор камеры.
+Каждый касающийся экрана палец владеет своим элементом управления, что позволяет
+удерживать несколько элементов одновременно. Соскальзывание пальца с кнопки, отмена жеста,
+открытие текстового ввода или уход приложения в фон отпускает удерживаемые клавиши.
+Кнопки отображают состояние нажатия. Системные панели скрываются, пока игра в фокусе,
+и могут быть временно показаны свайпом.
 
-The keyboard action-map switch previously rejected `DIDSAM_FORCESAVE` (2).
-The game's `ControllerStruct874C40::5CF320` unacquires the keyboard and uses
-that flag when changing action formats. Supporting it installs the 53-action
-driving format, including accelerator (user 1), brake (2), steering (3/4),
-handbrake (5) and nitro (6), instead of leaving the 32-action frontend format.
-The startup test covers remapping while unacquired, rejecting an acquired
-remap, and delivering the new driving press/release with its application ID.
+Переключение карты действий клавиатуры раньше отклоняло `DIDSAM_FORCESAVE` (2).
+Функция игры `ControllerStruct874C40::5CF320` снимает захват клавиатуры и использует
+этот флаг при смене формата действий. Поддержка этого флага устанавливает 53-действенный
+формат вождения, включающий газ (user 1), тормоз (2), руление (3/4),
+ручник (5) и нитро (6), вместо того чтобы оставлять 32-действенный формат фронтенда.
+Стартовый тест покрывает переназначение при снятом захвате, отклонение переназначения
+при захваченной клавиатуре, а также доставку нового нажатия/отпускания режима вождения
+с его идентификатором приложения.
 
-**AJUSTAR** opens an overlay editor without injecting game keys. Drag a button
-to move it; select it and use **− / +** to change its size (55–250%). **GUARDAR**
-stores normalized positions and size factors in app SharedPreferences, with
-separate menu and driving layouts. **CANCELAR** reloads saved settings;
-**RESTABLECER** previews defaults until saved. Pause the race before editing.
+**AJUSTAR** открывает редактор оверлея без инжекции игровых клавиш. Кнопку можно
+перетащить, чтобы переместить; выбрав её, можно менять размер кнопками **− / +** (55–250%).
+**GUARDAR** сохраняет нормализованные позиции и коэффициенты размера в SharedPreferences
+приложения, отдельно для раскладок меню и вождения. **CANCELAR** перезагружает сохранённые
+настройки; **RESTABLECER** показывает значения по умолчанию до сохранения. Перед
+редактированием гонку нужно поставить на паузу.
 
-**AJUSTAR → OPCIONES** adds classic, Xbox and PlayStation 3 visual layouts.
-The owner's Most Wanted and Carbon touch views provided the layout reference:
-left steering stick, RT/LT pedals and circular A/B/X/Y buttons in a diamond.
-This port implements those controls against its keyboard action bridge; the
-PS3 style uses R2/L2 and ×/○/□/△. Accelerator/brake remain on the pedals;
-the face buttons provide handbrake, nitro, camera and look-back. Each driving
-style stores its own button placement. The stick currently converts horizontal
-movement to left/right keys with a center dead zone, rather than analog input.
+**AJUSTAR → OPCIONES** добавляет классическую раскладку, а также визуальные раскладки
+Xbox и PlayStation 3. В качестве образца использовались touch-экраны владельца из
+Most Wanted и Carbon: левый стик руления, педали RT/LT и круглые кнопки A/B/X/Y
+в форме ромба. Этот порт реализует такое управление поверх своего моста с картой действий
+клавиатуры; стиль PS3 использует R2/L2 и ×/○/□/△. Газ и тормоз остаются на педалях;
+кнопки лица отвечают за ручник, нитро, камеру и взгляд назад. Каждый стиль вождения
+хранит собственное расположение кнопок. Стик сейчас преобразует горизонтальное движение
+в клавиши влево/вправо с мёртвой зоной в центре, а не в аналоговый ввод.
 
-Named custom layouts save the current mode/style and all button positions/sizes
-as JSON in app preferences. Loading restores that layout; menu and driving
-presets are listed separately. Style choice and named-preset operations apply
-immediately, while **CANCELAR** discards unsaved placement edits.
+Именованные пользовательские раскладки сохраняют текущий режим/стиль и позиции/размеры
+всех кнопок в виде JSON в настройках приложения. Загрузка восстанавливает эту раскладку;
+пресеты меню и вождения перечислены отдельно. Выбор стиля и операции с именованными
+пресетами применяются сразу, а **CANCELAR** отменяет несохранённые правки расположения.
 
-The inclination option uses the accelerometer with display-rotation correction,
-low-pass smoothing, a calibrated neutral position, hysteresis, invert and 1–4×
-sensitivity. It activates digital left/right in driving mode. Sensors unregister
-on pause, steering clears in menus/editing, and touch/tilt key ownership combines
-so releasing one source cannot release the other. Enabling or resuming calibrates
-at the current phone position. Proportional analog steering remains future work.
+Опция наклона использует акселерометр с коррекцией на поворот экрана,
+сглаживанием (low-pass), откалиброванным нейтральным положением, гистерезисом, инверсией
+и чувствительностью 1–4×. В режиме вождения она активирует цифровое влево/вправо. Датчики
+отключаются при паузе, руление сбрасывается в меню/режиме редактирования, а владение
+клавишами от касания и наклона объединено так, что отпускание одного источника не может
+отпустить управление, выставленное другим. Включение или возобновление калибрует
+нейтраль по текущему положению телефона. Пропорциональное аналоговое руление остаётся
+задачей на будущее.
 
-Bluetooth gamepads are requested for a subsequent development step. Planned
-coverage is Android gamepad buttons, analog steering, trigger pedals, per-device
-dead zones and concurrent touch/gamepad input ownership. This version does not
-claim Bluetooth controller support.
+Поддержка Bluetooth-геймпадов запланирована на следующий этап разработки. В планах —
+кнопки геймпада Android, аналоговое руление, педали на триггерах, мёртвые зоны для
+каждого устройства и одновременное владение вводом с касания и геймпада. Эта версия
+не заявляет поддержку Bluetooth-контроллеров.
 
-On background/window loss, guest execution pauses and input clears. Android
-WSI assigns an opaque window identity to each native-surface generation.
-D3D9 Present uses the current identity as its destination override, so DXVK
-recreates its presenter after resume while keeping the game device/resources.
-This also handles ANativeWindow pointer reuse across surface replacements.
+При уходе в фон/потере окна выполнение гостевого кода ставится на паузу, а ввод сбрасывается.
+Android WSI присваивает непрозрачный идентификатор окна каждому поколению нативной
+поверхности. D3D9 Present использует текущий идентификатор как переопределение назначения,
+поэтому DXVK пересоздаёт свой presenter после возобновления, сохраняя при этом устройство
+и ресурсы игры. Это также решает проблему повторного использования указателя ANativeWindow
+при замене поверхностей.
 
-## Validation
+## Проверка
 
-The optimized APK builds against Android API 35 and is installed on SM-S938B.
-The runtime scheduler, audio callbacks and DirectInput startup checks pass.
-Resort Loop at 1170×540 measured 37.5 FPS in the initial optimized sample;
-later samples were approximately 35–51 presentation FPS, versus 2.5–2.7 with
-the unoptimized lifted game. The user confirmed the performance improvement.
-With the corrected action switch, the race screenshot shows 100 km/h and a
-held accelerator (`work/android-driving-fix-race.png` in the parent workspace).
-Home and re-entering GameActivity preserved process 5169 and recovered the
-same race surface (`work/android-controls-resume.png`).
-The user confirmed the 0.9.0 editor worked. Saved menu coordinates were present
-in the app's `touch_layouts_v1.xml`, outside Git. Version 0.10.0 builds and installs
-successfully; the options dialog was observed on the phone, and the user
-confirmed the new version works. Detailed physical inclination calibration and
-all named-preset combinations have not been independently validated.
-A complete three-lap race, 120 FPS, Vulkan-1.1-only hardware, resolution changes
-in the original display menu and full widescreen HUD/FOV remain unverified.
+Оптимизированный APK собирается под Android API 35 и установлен на SM-S938B.
+Планировщик рантайма, аудио-колбэки и стартовые проверки DirectInput проходят успешно.
+Resort Loop при 1170×540 показал 37,5 FPS в первом оптимизированном замере;
+последующие замеры составили примерно 35–51 кадр presentation в секунду против 2,5–2,7
+на неоптимизированной портированной игре. Пользователь подтвердил рост производительности.
+После исправления переключения действий скриншот гонки показывает 100 км/ч и удерживаемый
+газ (`work/android-driving-fix-race.png` в родительской рабочей директории).
+Переход в Home и возврат в GameActivity сохранил процесс 5169 и восстановил
+ту же гоночную поверхность (`work/android-controls-resume.png`).
+Пользователь подтвердил, что редактор версии 0.9.0 работает. Сохранённые координаты меню
+присутствовали в `touch_layouts_v1.xml` приложения, вне Git. Версия 0.10.0 успешно
+собирается и устанавливается; диалог опций был замечен на телефоне, и пользователь
+подтвердил, что новая версия работает. Подробная калибровка физического наклона и
+все комбинации именованных пресетов независимо не проверялись.
+Полная трёхкруговая гонка, 120 FPS, оборудование только с Vulkan 1.1, смена разрешения
+в оригинальном меню отображения и полноценный широкоформатный HUD/FOV остаются непроверенными.

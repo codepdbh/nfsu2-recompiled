@@ -1,61 +1,63 @@
-# Android runtime 0.4.0 — 2026-10-07
+# Рантайм Android 0.4.0 — 2026-10-07
 
-For subsequent profile-folder and memory protection work, see
-[runtime 0.5.0](ANDROID_PROFILES_MEMORY_TEST.md).
+О последующей работе над папками профилей и защитой памяти см.
+[рантайм 0.5.0](ANDROID_PROFILES_MEMORY_TEST.md).
 
-Current status supersedes the earlier bootstrap and 0.3.0 bring-up reports.
-The locally generated ARM64 APK has rendered the original NFSU2 initial
-splash on Samsung SM-S938B / Adreno 830. This is real guest D3D9 drawing through
-DXVK/Vulkan, not a host replacement image. Menu and races are not validated.
+Текущий статус заменяет собой более ранние отчёты по bootstrap и релизу 0.3.0.
+Локально собранный APK ARM64 отрисовал оригинальную начальную заставку NFSU2
+на Samsung SM-S938B / Adreno 830. Это реальная отрисовка гостевого D3D9 через
+DXVK/Vulkan, а не хостовое изображение-заглушка. Меню и гонки пока не проверены.
 
-## Added
+## Добавлено
 
-- A separate launcher selects languages present in `nfsu2/LANGUAGES`, defaults
-  to Spanish and persists the selection. The real guest's `Language` registry
-  query receives the original supported language name (Spanish, English UK,
-  etc.). No original files are renamed. Each launch has a fresh `:game` process.
-- DirectInput 8 ANSI objects, keyboard/mouse enumeration, supported formats,
-  acquisition, immediate state, cooperative level and guest COM reference
-  counting. Android physical keys and initial touch buttons update DIK states
-  and Windows key messages. Buffered input, action mapping, force feedback,
-  full joystick support and mouse motion remain incomplete. Unsupported
-  action mapping returns a real unsupported HRESULT; it is not a success stub.
-- Software DirectSound PCM buffers, guest lock/unlock, looping and one-shot
-  playback, positions, frequency, volume and pan; Android AAudio stereo float
-  output. Non-PCM codecs, spatialization, notifications, device disconnect
-  recovery and all sound API coverage remain unfinished.
-- Guest mutex ownership, recursion, named handles, timeouts and abandoned
-  ownership; file seeks; UTC guest time zone; bounded ANSI formatting;
-  committed-memory pointer checks; Windows message queue and dispatch.
+- Отдельный лаунчер выбирает языки, присутствующие в `nfsu2/LANGUAGES`, по умолчанию
+  использует испанский и сохраняет выбор. Запрос реестра `Language` настоящей игры
+  получает оригинальное название поддерживаемого языка (испанский, английский (Великобритания)
+  и т.д.). Оригинальные файлы не переименовываются. Каждый запуск создаёт новый процесс `:game`.
+- ANSI-объекты DirectInput 8, перечисление клавиатуры/мыши, поддерживаемые форматы,
+  захват, немедленное состояние, кооперативный уровень и подсчёт гостевых COM-ссылок.
+  Физические клавиши Android и начальные сенсорные кнопки обновляют состояния DIK и
+  сообщения клавиш Windows. Буферизованный ввод, карта действий, force feedback,
+  полная поддержка джойстика и движение мыши пока не реализованы. Неподдерживаемая
+  карта действий возвращает настоящий HRESULT о неподдержке, а не заглушку с успехом.
+- Программные PCM-буферы DirectSound, гостевая блокировка/разблокировка, зацикленное
+  и одноразовое воспроизведение, позиции, частота, громкость и панорама; стереовывод
+  AAudio с плавающей точкой на Android. Не-PCM кодеки, пространственный звук, уведомления,
+  восстановление после отключения устройства и полное покрытие звукового API пока не завершены.
+- Владение гостевым мьютексом, рекурсия, именованные хендлы, таймауты и брошенное владение;
+  позиционирование в файлах; гостевой часовой пояс UTC; ограниченное ANSI-форматирование;
+  проверки указателей на зафиксированную память; очередь и диспетчеризация сообщений Windows.
 
-## Validation
+## Проверка
 
-- ARM64 mixer fixtures passed on the physical phone: signed PCM16, unsigned
-  PCM8, stereo/mono, fractional resampling, loops, stopping, clipping and gains.
-- Guest ABI checks passed on the phone for keyboard press/release, arbitrary
-  data offsets, output guard byte, acquired/unacquired state and stdcall cleanup.
-- AAudio opened a real 48 kHz stereo float stream. This verifies output
-  initialization, not audible correctness of every game sound.
-- Launcher selection was confirmed in device logs as `Spanish`, followed by
-  the original guest loading `Spanish.bin`. The updated foreground activation
-  lets initialization advance to the next explicit boundary:
-  `kernel32.dll!VirtualProtect` at guest caller `0x007212e5`.
-- Device logs confirm game resource loading, buffers/shaders and original
-  initial splash draw/present. The runtime retains a 30-second bring-up limit;
-  timeout while waiting for initialization/messages is an unresolved result,
-  not a successful menu or race test.
-- A touch test exposed JNI lookup failing after NativeActivity-only loading;
-  explicit `System.loadLibrary` fixed the failure and subsequent touch
-  down/up events reached the native input state.
+- Фикстуры микшера на ARM64 прошли на физическом телефоне: знаковый PCM16, беззнаковый
+  PCM8, стерео/моно, дробный ресемплинг, циклы, остановка, клиппинг и усиление.
+- Проверки гостевого ABI прошли на телефоне для нажатия/отпускания клавиш клавиатуры,
+  произвольных смещений данных, защитного байта на выходе, захваченного/незахваченного
+  состояния и очистки стека по stdcall.
+- AAudio открыл настоящий поток 48 кГц, стерео, с плавающей точкой. Это подтверждает
+  инициализацию вывода, но не слышимую корректность каждого звука в игре.
+- Выбор в лаунчере подтверждён в логах устройства как `Spanish`, за которым следует
+  загрузка настоящей игрой файла `Spanish.bin`. Обновлённая активация переднего плана
+  позволяет инициализации продвинуться до следующей явной границы:
+  `kernel32.dll!VirtualProtect` по гостевому адресу вызова `0x007212e5`.
+- Логи устройства подтверждают загрузку ресурсов игры, буферов/шейдеров и отрисовку/показ
+  оригинальной начальной заставки. Рантайм по-прежнему сохраняет 30-секундный лимит на
+  запуск; таймаут при ожидании инициализации/сообщений — это нерешённый результат,
+  а не успешный тест меню или гонки.
+- Сенсорный тест выявил сбой поиска JNI после загрузки только через NativeActivity;
+  явный вызов `System.loadLibrary` устранил сбой, и последующие события касания
+  (down/up) достигли нативного состояния ввода.
 
-Parent workspace evidence: `work/android-input-audio-device-test.log`,
-`work/android-input-audio-device-test.png`, and
-`work/android-runtime-input-host-test.log`. Logs/screenshots and APKs stay
-local. Current local artifact: `build/android/NFSU2-AndroidEvolved-runtime.apk`.
+Доказательства в родительской рабочей директории: `work/android-input-audio-device-test.log`,
+`work/android-input-audio-device-test.png` и
+`work/android-runtime-input-host-test.log`. Логи/скриншоты и APK остаются локально.
+Текущий локальный артефакт: `build/android/NFSU2-AndroidEvolved-runtime.apk`.
 
-Launcher evidence: `work/android-launcher-test.log` and
-`work/android-launcher-menu.png` in the parent workspace.
+Доказательства по лаунчеру: `work/android-launcher-test.log` и
+`work/android-launcher-menu.png` в родительской рабочей директории.
 
-The instance requests Vulkan 1.1; the tested phone driver advertises 1.3.
-A Vulkan-1.1-only GPU has not been tested. Full guest pause/resume, native
-surface recovery and performance optimization remain open work.
+Инстанс запрашивает Vulkan 1.1; протестированный драйвер телефона заявляет 1.3.
+GPU, ограниченный только Vulkan 1.1, не тестировался. Полная пауза/возобновление гостя,
+восстановление нативной поверхности и оптимизация производительности остаются открытыми
+задачами.

@@ -1,79 +1,82 @@
-# Android runtime 0.7.0 — 2026-10-08
+# Рантайм Android 0.7.0 — 2026-10-08
 
-Continues the [resolution/input work](ANDROID_RESOLUTION_INPUT_TEST.md)
-and [memory/filesystem adaptation](ANDROID_PROFILES_MEMORY_TEST.md).
+Продолжает [работу над разрешением/вводом](ANDROID_RESOLUTION_INPUT_TEST.md)
+и [адаптацию памяти/файловой системы](ANDROID_PROFILES_MEMORY_TEST.md).
 
-## Runtime changes
+## Изменения в рантайме
 
-- One persistent WinMM timer worker replaces allocating a native thread and
-  guest stack for every timer. One-shot and periodic timers retain cancellation
-  and synchronous retirement. Startup checks cover retirement and worker reuse.
-- Android's text dialog sends paced keyboard press/release events to the real
-  frontend action map. Replacing the default name sends backspaces first.
-  The game received the full name `paulo`; the earlier `NOMBREp` result came
-  from injecting characters faster than the frontend consumed them.
-- `GetFileType` recognizes opened game files as disk files. The original CRT
-  queried this immediately after opening a profile for writing; returning an
-  invalid-handle error made it close the new file before `WriteFile`.
-  The filesystem device test checks disk/console/invalid/closed handles.
-- FILETIME conversion supports the runtime's virtual UTC timezone, with
-  calendar/millisecond output and invalid input checks.
-- A bounded decoder handles the generated x86 callbacks the game's audio
-  code generates in its guest heap. It invokes existing lifted functions;
-  x86 bytes are never executed by ARM64. Longer routines and 32-bit stack
-  cleanup immediates are supported, together with context reloads from the
-  shifted stack, signed min/max branches and 32-bit multiply/add/subtract.
-  A synthetic long callback checks 300 cdecl calls, signed-clamp outcomes,
-  arithmetic overflow, stack cleanup and guard bytes.
-  Other generated instruction patterns remain explicit unsupported boundaries.
-- Critical-section deletion is deferred while occupied. Waiting threads retain
-  ownership of the native mutex object across scheduler handovers. Owner checks
-  prevent unlocking from another thread; reinitializing an occupied section
-  remains an explicit boundary. Startup checks cover recursion, guards,
-  deferred retirement and reinitialization after retirement.
-- Interactive Android sessions no longer stop at the five-minute bring-up
-  deadline. Explicit lifecycle cancellation still stops the guest. Host smoke
-  tests retain their deadline.
-- The activity keeps the screen awake while playing and only shows touch
-  popups while in the foreground.
+- Один постоянный воркер таймера WinMM заменяет выделение нативного потока и
+  гостевого стека под каждый таймер. Одноразовые и периодические таймеры по-прежнему
+  поддерживают отмену и синхронное завершение. Стартовые проверки покрывают завершение
+  и повторное использование воркера.
+- Диалог ввода текста на Android отправляет размеренные события нажатия/отпускания
+  клавиш в настоящую карту действий фронтенда. Замена имени по умолчанию сначала
+  отправляет backspace'ы. Игра получила полное имя `paulo`; более ранний результат
+  `NOMBREp` возникал из-за того, что символы инжектировались быстрее, чем их успевал
+  обрабатывать фронтенд.
+- `GetFileType` распознаёт открытые файлы игры как дисковые. Оригинальный CRT
+  запрашивал это сразу после открытия профиля на запись; возврат ошибки невалидного
+  хендла приводил к тому, что новый файл закрывался ещё до `WriteFile`.
+  Тест файловой системы проверяет дисковые, консольные, невалидные и закрытые хендлы.
+- Преобразование FILETIME поддерживает виртуальный часовой пояс UTC рантайма, с выводом
+  календаря/миллисекунд и проверками невалидного ввода.
+- Ограниченный декодер обрабатывает сгенерированные x86-колбэки, которые аудиокод игры
+  создаёт в своей гостевой куче. Он вызывает уже портированные функции; байты x86
+  никогда не выполняются на ARM64 напрямую. Поддерживаются более длинные процедуры и
+  32-битные непосредственные значения для очистки стека, а также перезагрузка контекста
+  со сдвинутого стека, знаковые ветвления min/max и 32-битные умножение/сложение/вычитание.
+  Синтетический длинный колбэк проверяет 300 вызовов по соглашению cdecl, результаты
+  знакового клиппинга, арифметическое переполнение, очистку стека и защитные байты.
+  Другие паттерны сгенерированных инструкций остаются явными границами без поддержки.
+- Удаление критической секции откладывается, пока она занята. Ожидающие потоки сохраняют
+  владение нативным объектом мьютекса при передачах управления планировщиком. Проверки
+  владельца предотвращают разблокировку из другого потока; повторная инициализация
+  занятой секции остаётся явной границей. Стартовые проверки покрывают рекурсию, защитные
+  проверки, отложенное завершение и повторную инициализацию после завершения.
+- Интерактивные сессии на Android больше не останавливаются по истечении пятиминутного
+  дедлайна на запуск. Явная отмена жизненного цикла по-прежнему останавливает гостя.
+  Дымовые тесты на хосте сохраняют свой дедлайн.
+- Активность удерживает экран включённым во время игры и показывает всплывающие
+  подсказки по касанию только на переднем плане.
 
-## Device evidence
+## Доказательства с устройства
 
-The connected Samsung SM-S938B / Adreno 830 rendered the Spanish title screen,
-main menu, car preview and quick-race mode selection at 1170×540. The launcher
-also previously created a 2340×1080 backbuffer successfully.
+Подключённый Samsung SM-S938B / Adreno 830 отрисовал испанский титульный экран,
+главное меню, превью машины и выбор режима быстрой гонки при 1170×540. Лаунчер
+также ранее успешно создавал бэкбуфер 2340×1080.
 
-The original failed profile attempt left a zero-byte `paulo` file. That test
-file and its empty directory were removed. A later profile is 54,966 bytes at
-`/storage/emulated/0/nfsu2/AppData/Local/NFS Underground 2/paulo/paulo`.
-A fresh game process opened it for reading and the menu displayed `paulo`.
-The user's profile data is outside Git.
+Оригинальная неудачная попытка создать профиль оставила файл `paulo` нулевого размера.
+Этот тестовый файл и его пустая директория были удалены. Более поздний профиль занимает
+54 966 байт по пути `/storage/emulated/0/nfsu2/AppData/Local/NFS Underground 2/paulo/paulo`.
+Новый процесс игры открыл его на чтение, и меню отобразило `paulo`.
+Пользовательские данные профиля находятся вне Git.
 
-Local evidence is in the parent workspace's `work/android-paulo-save-success.log`
-and `work/android-profile-step1.png`. Earlier failures are recorded in
-`work/android-profile-save-failure.log` and `work/android-resolution-crash.log`.
+Локальные доказательства лежат в родительской рабочей директории:
+`work/android-paulo-save-success.log` и `work/android-profile-step1.png`. Более ранние
+сбои зафиксированы в `work/android-profile-save-failure.log` и
+`work/android-resolution-crash.log`.
 
-Circuit selection reached a longer generated callback at `0x10fcfe34`, exceeding
-the earlier decoder budget. The extended decoder passed this point and opened
-Resort Loop's track selection, race options, Peugeot 206 selection, automatic
-transmission and the race loading screen. Loading then reached a context reload,
-signed clamp, multiplication and subtraction in generated audio callbacks.
-After adding these operations, the connected phone loaded Resort Loop and
-rendered the countdown, race HUD and moving opponents. The user confirmed
-that the race started. A complete race and player acceleration remain pending
-validation; the first unoptimized race measured 2.5–2.7 presentation FPS.
-Local evidence: `work/android-first-gameplay.log` and
-`work/android-gameplay-drive.png` in the parent workspace.
-Changing resolution inside the original
-display menu previously stopped at an invalid D3D9 COM object; detailed
-object diagnostics are now present, and that path is still under investigation.
-The subsequent optimized runtime and controls build fixes the black surface
-on Android resume and the driving action-map switch; see the newer
-[gameplay and controls report](ANDROID_GAMEPLAY_CONTROLS_TEST.md) for evidence.
+Выбор трассы дошёл до более длинного сгенерированного колбэка по адресу `0x10fcfe34`,
+превысив бюджет прежнего декодера. Расширенный декодер прошёл эту точку и открыл
+выбор трассы Resort Loop, настройки гонки, выбор Peugeot 206, автоматическую коробку
+передач и экран загрузки гонки. Далее загрузка дошла до перезагрузки контекста,
+знакового клиппинга, умножения и вычитания в сгенерированных аудио-колбэках.
+После добавления этих операций подключённый телефон загрузил Resort Loop и
+отрисовал обратный отсчёт, гоночный HUD и движущихся соперников. Пользователь
+подтвердил, что гонка началась. Полная гонка и ускорение игрока пока не проверены;
+первая неоптимизированная гонка показала 2,5–2,7 кадра presentation в секунду.
+Локальные доказательства: `work/android-first-gameplay.log` и
+`work/android-gameplay-drive.png` в родительской рабочей директории.
+Смена разрешения в оригинальном меню отображения ранее останавливалась на невалидном
+COM-объекте D3D9; теперь присутствует подробная диагностика объекта, и этот путь
+по-прежнему исследуется. Последующая оптимизированная сборка рантайма и управления
+исправляет чёрную поверхность при возобновлении на Android и переключение карты
+действий при вождении; доказательства см. в более новом
+[отчёте по геймплею и управлению](ANDROID_GAMEPLAY_CONTROLS_TEST.md).
 
-Presentation-call FPS logs include movie/frame reuse and are not a measurement
-of unique video frames or complete-race performance. The user still reports
-lag. Achieving 120 FPS remains a future profiling and optimization goal.
-The tested Vulkan driver advertises 1.3; Vulkan-1.1-only hardware remains
-unverified. Full widescreen HUD/FOV adaptation and complete input/audio
-coverage remain unfinished.
+Логи FPS по вызовам presentation включают повторное использование роликов/кадров и
+не являются измерением уникальных видеокадров или производительности на полной гонке.
+Пользователь по-прежнему сообщает о подлагиваниях. Достижение 120 FPS остаётся
+будущей целью профилирования и оптимизации. Протестированный драйвер Vulkan заявляет 1.3;
+оборудование только с Vulkan 1.1 остаётся непроверенным. Полная адаптация широкоформатного
+HUD/FOV и полное покрытие ввода/звука пока не завершены.

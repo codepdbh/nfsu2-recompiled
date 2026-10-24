@@ -1,76 +1,77 @@
-# Android runtime 0.6.0 — 2026-10-08
+# Рантайм Android 0.6.0 — 2026-10-08
 
-Includes [0.5.0 memory protection and profile storage](ANDROID_PROFILES_MEMORY_TEST.md).
+Включает [защиту памяти и хранение профилей из 0.5.0](ANDROID_PROFILES_MEMORY_TEST.md).
 
-## Resolution selection
+## Выбор разрешения
 
-The launcher now offers the active Android display resolution, 75%, 50%, and
-1280×720. Percentage choices preserve the screen aspect ratio, rounded to
-even dimensions. The selection persists and is passed with the selected
-language to each fresh game process. The scrollable launcher accommodates
-the additional controls.
+Лаунчер теперь предлагает текущее разрешение экрана Android, 75%, 50% и 1280×720.
+Варианты в процентах сохраняют соотношение сторон экрана, с округлением до чётных
+размеров. Выбор сохраняется и передаётся вместе с выбранным языком в каждый новый
+процесс игры. Прокручиваемый лаунчер вмещает дополнительные элементы управления.
 
-For the pinned owner-supplied PE, the original resolution function at
-`0x005bf610` is intercepted at its lifted function entry on Android. This
-handles direct calls and indirect calls, retains stdcall stack cleanup and
-returns the selected dimensions through the original guest pointers. The
-game then creates its own backbuffer and dependent resources at that size.
-The WSI exposes the selected mode alongside existing desktop modes. The
-surface/display size and render resolution remain separate.
+Для закреплённого (pinned) PE, предоставленного владельцем, исходная функция выбора
+разрешения по адресу `0x005bf610` перехватывается на входе в поднятую (lifted) функцию
+на Android. Это обрабатывает и прямые, и косвенные вызовы, сохраняет stdcall-очистку
+стека и возвращает выбранные размеры через исходные гостевые указатели. Затем игра сама
+создаёт свой backbuffer и зависимые ресурсы под этим размером. WSI предоставляет выбранный
+режим наряду с существующими десктопными режимами. Размер поверхности/дисплея и разрешение
+рендеринга остаются раздельными величинами.
 
-The owner added `fixwidescreen` with its Windows ASI loader, module, INI and
-HUD-position data. These were inspected as references, along with upstream
+Владелец добавил `fixwidescreen` с собственным ASI-загрузчиком под Windows, модулем, INI
+и данными позиционирования HUD. Они изучались как референс, наряду с апстримным
 [Resolution.ixx](https://github.com/ThirteenAG/WidescreenFixesPack/blob/master/source/NFSUnderground2.WidescreenFix/Resolution.ixx).
-The Android implementation supplies its own resolution selector. It does
-not load those x86 DLL/ASI binaries or apply the entire INI. The fix's FOV,
-HUD-position, cinematic scaling and other Windows hooks still need native
-adaptation. Selecting a wide resolution alone does not certify correct HUD
-or camera geometry.
+Реализация под Android использует собственный селектор разрешения. Она не загружает эти
+x86 DLL/ASI-бинарники и не применяет весь INI целиком. FOV, позиционирование HUD,
+масштабирование в катсценах и прочие хуки под Windows из этого фикса всё ещё нуждаются
+в нативной адаптации. Сам по себе выбор широкого разрешения не подтверждает корректность
+геометрии HUD или камеры.
 
-## Keyboard action mapping
+## Маппинг клавиатурных действий
 
-- `EnumDevicesBySemantics` invokes the real lifted callback with ANSI device
-  information and 32-bit COM pointers. Enumerated system devices have a
-  nonexclusive background configuration. Force-feedback and secondary-device
-  requests enumerate no unsupported devices.
-- Keyboard `BuildActionMap` assigns direct keyboard semantics to scan-code
-  objects, retaining application mappings. `SetActionMap` installs the
-  mapped DWORD offsets, buffer size and application event values.
-- Buffered keyboard input records both press and release, sequence and
-  timestamp. `GetDeviceData` supports 16/20-byte records, peek, consume,
-  count limits, overflow reporting and application data. Brief touches
-  survive between guest polls. Pause/input clearing records releases.
-- Buffered mouse data, mouse action maps, genre-specific controller
-  mappings, persistent rebinding and force feedback remain unfinished.
-  Forced action-map saving returns unsupported.
+- `EnumDevicesBySemantics` вызывает реальный поднятый колбэк с ANSI-информацией об
+  устройстве и 32-битными указателями COM. У перечисленных системных устройств
+  неэксклюзивная фоновая конфигурация. Запросы force-feedback и вторичных устройств не
+  перечисляют неподдерживаемые устройства.
+- Клавиатурный `BuildActionMap` назначает прямую клавиатурную семантику объектам
+  скан-кодов, сохраняя маппинги приложения. `SetActionMap` устанавливает замапленные
+  DWORD-смещения, размер буфера и значения событий приложения.
+- Буферизованный ввод с клавиатуры записывает и нажатие, и отпускание, с
+  последовательностью и временной меткой. `GetDeviceData` поддерживает записи по 16/20
+  байт, подглядывание (peek), потребление, лимиты количества, сообщение о переполнении
+  и данные приложения. Короткие касания сохраняются между опросами гостя. Пауза/очистка
+  ввода фиксирует отпускания.
+- Буферизованные данные мыши, карты действий мыши, маппинги контроллеров по жанрам,
+  постоянная перепривязка клавиш и force feedback остаются незавершёнными.
+  Принудительное сохранение карты действий возвращает "не поддерживается".
 
-On the phone, the real game enumerated its 53-action format and built its
-52-, 32-, 19- and 9-action keyboard maps. It installed the 128-byte frontend
-format. Earlier builds returned unsupported for semantic enumeration and
-then for buffered data; those boundaries have now been implemented.
+На телефоне реальная игра перечислила свой формат из 53 действий и построила карты
+клавиатуры на 52, 32, 19 и 9 действий. Она установила 128-байтный формат фронтенда.
+В более ранних сборках перечисление семантики, а затем буферизованные данные возвращали
+"не поддерживается" — эти границы теперь реализованы.
 
-## Validation
+## Проверка
 
-- `assembleDebug` passed and the version 6 ARM64 APK was installed.
-- The connected SM-S938B created a real D3D9 backbuffer at **2340×1080**,
-  with `CreateDevice` result `00000000`; its original movies rendered.
-- An explicit **1170×540** launch also created its D3D9 backbuffer successfully.
-- Guest resolution checks passed for output values, guard bytes and stdcall
-  cleanup. Keyboard action checks passed for Escape/Enter DWORD state,
-  unmapped actions, release and guards. Buffered checks passed for offsets,
-  application data, peek, consumption, overflow and ordered release.
-- API 26–29 now requests read and write storage permissions, as profile
-  creation needs both. This permission branch has not been tested on an
-  older physical Android device.
+- `assembleDebug` прошёл успешно, и ARM64 APK шестой версии был установлен.
+- Подключённый SM-S938B создал реальный backbuffer D3D9 с разрешением **2340×1080**,
+  результат `CreateDevice` — `00000000`; исходные ролики отрисовались.
+- Явный запуск с **1170×540** также успешно создал свой D3D9 backbuffer.
+- Проверки гостевого разрешения прошли для выходных значений, guard-байтов и
+  stdcall-очистки. Проверки клавиатурных действий прошли для состояния DWORD клавиш
+  Escape/Enter, немаппированных действий, отпускания и guard-значений. Буферизованные
+  проверки прошли для смещений, данных приложения, peek, потребления, переполнения и
+  упорядоченного отпускания.
+- API 26–29 теперь запрашивает разрешения на чтение и запись хранилища, так как создание
+  профиля требует обоих. Эта ветка разрешений не тестировалась на более старом физическом
+  устройстве Android.
 
-Device evidence is local to the parent workspace:
+Доказательства с устройства лежат локально в родительском рабочем пространстве:
 `work/android-resolution-native-test.log`,
 `work/android-resolution-native-test.png`,
 `work/android-resolution-input-test.log`,
-`work/android-resolution-input-test.png` and
+`work/android-resolution-input-test.png` и
 `work/android-resolution-build.log`.
 APK: `build/android/NFSU2-AndroidEvolved-runtime.apk`.
 
-The runtime still has a 90-second bring-up deadline. A complete playable
-menu, races, saving/loading, lifecycle recovery and Vulkan-1.1-only hardware
-compatibility are not certified by these checks.
+У рантайма по-прежнему лимит bring-up в 90 секунд. Полностью играбельное меню, гонки,
+сохранение/загрузка, восстановление жизненного цикла и совместимость с оборудованием,
+поддерживающим только Vulkan 1.1, этими проверками не подтверждены.

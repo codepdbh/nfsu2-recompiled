@@ -1,71 +1,70 @@
-# Android race performance, 16 October 2026
+# Производительность на Android при гонках, 16 октября 2026
 
-Testers with recent phones (Dimensity 9300/8500, Snapdragon 8 Gen 3) reported
-about 20 FPS. Issue logs showed 38k–75k Direct3D 9 calls per race frame and a
-bridge cost of 5–12 ms per frame, so neither the GPU nor the bridge alone
-explained the frame time.
+Тестировщики с современными телефонами (Dimensity 9300/8500, Snapdragon 8 Gen 3) сообщали
+о примерно 20 FPS. Логи issue показывали 38–75 тысяч вызовов Direct3D 9 на кадр гонки и
+стоимость моста 5–12 мс на кадр — то есть ни GPU, ни мост сами по себе не объясняли время кадра.
 
-## Measurement
+## Измерения
 
-`simpleperf` (system binary, `--app` on the debuggable APK) on the Redmi Note 8
-(Snapdragon 665) during a race, symbolized with the archived unstripped
-library of the installed build.
+`simpleperf` (системный бинарник, с флагом `--app` на debuggable APK) на Redmi Note 8
+(Snapdragon 665) во время гонки, символизация по архивной несрезанной (unstripped)
+библиотеке установленной сборки.
 
-On-CPU, render thread:
+On-CPU, рендер-поток:
 
-| Share | Code |
+| Доля | Код |
 |---|---|
-| ~25% | statically linked D3DX effect code (`sub_00669286`, `sub_00660A42`, `sub_00663A32`, ...) applying pass states |
-| ~18% | bridge: `dispatchGuestD3D9`, `d3dDispatch`, `recomp_lookup*`, PLT stubs, `checkGuestProgress` |
-| ~5% | DXVK D3D9 front end |
+| ~25% | статически слинкованный код эффектов D3DX (`sub_00669286`, `sub_00660A42`, `sub_00663A32`, ...), применяющий pass-состояния |
+| ~18% | мост: `dispatchGuestD3D9`, `d3dDispatch`, `recomp_lookup*`, PLT-заглушки, `checkGuestProgress` |
+| ~5% | фронтенд DXVK D3D9 |
 
-The render thread was on CPU only ~67% of the time. An off-CPU profile
-(`--trace-offcpu --call-graph dwarf`) put 56% of its wall time in
-`MachineMutex::lock`, reached from the time-slice yield in
-`checkGuestProgress`, called from `recomp_lookup_import` inside the D3DX code.
+Рендер-поток был на CPU только ~67% времени. Off-CPU профиль
+(`--trace-offcpu --call-graph dwarf`) показал 56% времени ожидания (wall time) в
+`MachineMutex::lock`, куда поток попадает через yield по истечении тайм-слайса в
+`checkGuestProgress`, вызываемый из `recomp_lookup_import` внутри кода D3DX.
 
-The guest audio thread used ~14% of a CPU, a third of it in `callGuest`
-(state save/restore of all integer, x87, MMX and SSE registers, plus a
-`std::vector` malloc/free per call) on behalf of `dynamicThunk`, which runs the
-game's generated mixing code: ~100 `push esi; call f; mov [esi+n],eax` blocks
-per mix.
+Гостевой аудиопоток занимал ~14% одного CPU, треть этого времени — в `callGuest`
+(сохранение/восстановление состояния всех целочисленных, x87, MMX и SSE регистров, плюс
+malloc/free для `std::vector` на каждый вызов) от имени `dynamicThunk`, который исполняет
+сгенерированный код микширования игры: примерно 100 блоков `push esi; call f; mov [esi+n],eax`
+на каждый микс.
 
-## Causes and changes
+## Причины и изменения
 
-- Every guest thread yielded the machine after 500 µs if another one waited.
-  The render thread handed over about 100 times per frame, each handover
-  waking the queued threads in turn. The deadline was a shared static, so the
-  incoming thread inherited an expired slice and handed the machine straight
-  back (ping-pong). Slices now count from `MachineMutex::acquired`; the render
-  thread (the one presenting) gets 3 ms and yields once after each Present.
-- `dynamicThunk` performs its calls as plain cdecl calls, as the x86 code does;
-  the lifted callee preserves its callee-saved registers.
-- `callGuest` takes braced argument lists without heap allocation.
-- `d3dDispatch` reads arguments in place on the guest stack; dispatch keeps a
-  one-entry object cache, invalidated whenever an object is erased.
-- `libnfsu2_android.so` links with `-Bsymbolic`, removing PLT stubs from the
-  lookups taken on every indirect call.
-- Every 120 frames the log reports the costliest D3D9 methods and the render
-  thread's handovers and wait per frame.
+- Каждый гостевой поток отдавал машину (yield) через 500 мкс, если её ждал другой поток.
+  Рендер-поток передавал управление около 100 раз за кадр, и каждая передача будила
+  поставленные в очередь потоки по очереди. Дедлайн хранился в общей статической переменной,
+  поэтому входящий поток наследовал уже истёкший тайм-слайс и сразу же отдавал машину обратно
+  (пинг-понг). Теперь тайм-слайсы отсчитываются от `MachineMutex::acquired`; рендер-поток
+  (тот, что вызывает Present) получает 3 мс и делает yield один раз после каждого Present.
+- `dynamicThunk` теперь выполняет вызовы как обычные cdecl-вызовы, как это делает исходный
+  x86-код; поднятая (lifted) вызываемая функция сохраняет свои callee-saved регистры.
+- `callGuest` принимает списки аргументов в фигурных скобках без выделения памяти в куче.
+- `d3dDispatch` читает аргументы прямо на гостевом стеке; диспетчеризация хранит кэш на
+  один объект, инвалидируемый при удалении объекта.
+- `libnfsu2_android.so` линкуется с `-Bsymbolic`, что убирает PLT-заглушки из поисков при
+  каждом косвенном вызове.
+- Каждые 120 кадров в лог выводятся самые затратные методы D3D9, а также число передач
+  управления (handover) рендер-потока и время ожидания на кадр.
 
-## Result
+## Результат
 
-Same race on the Redmi Note 8, compared at similar call counts (the scene is
-not an identical replay):
+Та же гонка на Redmi Note 8, сравнение при похожем числе вызовов (сцена не является точным
+повтором одного и того же прохода):
 
-| Calls/frame | v0.14.6 | v0.14.7 candidate |
+| Вызовов/кадр | v0.14.6 | кандидат v0.14.7 |
 |---|---|---|
 | ~19k | 27.7 FPS | 34.3–36.1 FPS |
 | ~25k | 20.3 FPS | 27.8 FPS |
 
-Render-thread wait dropped from 56% of wall time to roughly 5–7 ms of a
-28–36 ms frame (7–9 handovers per frame). Audio health reported no underruns.
-No high-end MediaTek device was available; the handover cost affected every
-device, but the gain there is not measured.
+Время ожидания рендер-потока упало с 56% wall time до примерно 5–7 мс из 28–36 мс кадра
+(7–9 передач управления за кадр). Проверка аудио не показала ни одного underrun. Не было
+доступно ни одного топового устройства MediaTek — стоимость передачи управления затрагивает
+любое устройство, но выигрыш на них не измерялся.
 
-## Next
+## Дальше
 
-The D3DX effect state application remains the largest single cost. The
-audio thread's `dynamicThunk` still decodes the generated code on every call
-(~10% of that thread); caching the decoded sequence per address is the next
-inexpensive step.
+Применение состояний эффектов D3DX остаётся самой затратной частью кода. `dynamicThunk`
+аудиопотока по-прежнему декодирует сгенерированный код при каждом вызове (~10% времени
+этого потока); следующий недорогой шаг — кэшировать декодированную последовательность
+по адресу.

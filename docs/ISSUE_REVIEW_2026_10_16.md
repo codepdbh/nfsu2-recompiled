@@ -1,94 +1,101 @@
-# Android issue review, 16 October 2026
+# Обзор issue для Android, 16 октября 2026
 
-Reviewed 662 available Underground 2 issues including comments, alongside
-38 Underground 1 issues. Many contain only a phone-local ZIP path and an
-empty technical summary. Downloaded available recent attachments; the
-attachment in #507 returned HTTP 404. Reports and device logs stay outside
-Git, and no issues or comments were modified.
+Рассмотрено 662 доступных issue по Underground 2, включая комментарии, а
+также 38 issue по Underground 1. Многие содержат только локальный на телефоне
+путь к ZIP-файлу и пустое техническое описание. Скачаны доступные недавние
+вложения; вложение в #507 вернуло HTTP 404. Отчёты и логи устройств остаются
+вне Git, никакие issue или комментарии не изменялись.
 
-## Back-buffer reset failure
+## Сбой сброса back-буфера
 
-[#629](https://github.com/codepdbh/nfsu2-recompiled/issues/629) reports
-v0.14.5 on a moto e40 with `ClearContainer` at the top of the crash stack,
-called from `CreateBackBuffers` during `Reset`, after a prior DXVK error.
-The same path appears in #530, #506, #486, #451, #420 and #361 on earlier
-builds. The #530 ZIP was downloaded; its crash records include older
-builds, so its report-version field alone is not sufficient attribution.
+[#629](https://github.com/codepdbh/nfsu2-recompiled/issues/629) сообщает о
+v0.14.5 на moto e40 с `ClearContainer` на вершине стека краша, вызванным из
+`CreateBackBuffers` во время `Reset`, после предшествующей ошибки DXVK. Тот же
+путь встречается в #530, #506, #486, #451, #420 и #361 на более ранних
+сборках. ZIP из #530 был скачан; записи краша в нём относятся к более старым
+сборкам, так что одного поля версии отчёта недостаточно для точной атрибуции.
 
-The exact v0.14.5 ARM64 library, Build ID
-`d88fcb81c4153db9eeefabb3a3d19d7418fa54d4`, has an unconditional
-`ClearContainer` call inside the cleanup loop at `0x50abb8`. The source
-preparation recipe already contains null-entry cleanup and exception
-handling for partial allocation. Regenerating the prepared DXVK source
-and rebuilding includes these protections in the actual binaries.
+Конкретная библиотека v0.14.5 для ARM64 с Build ID
+`d88fcb81c4153db9eeefabb3a3d19d7418fa54d4` содержит безусловный вызов
+`ClearContainer` внутри цикла очистки по адресу `0x50abb8`. Рецепт подготовки
+исходников уже содержит очистку пустых записей и обработку исключений для
+частичного выделения памяти. Регенерация подготовленных исходников DXVK и
+пересборка включают эти защиты в фактические бинарники.
 
-Added a SHA-256 recipe marker checked by CMake, including the shared
-Underground 1 build, to reject stale or unverified preparation. Added
-guards for absent Vulkan swapchain/surface handles and repeated surface
-teardown. `ports/dxvk_android/test_reset_cleanup.py` extracts the actual
-prepared method bodies into a host fixture. Fault injection at each of
-four buffer slots, successful retry, empty cleanup, missing extension
-function pointers and repeated handle destruction pass with MSVC C++17.
-This verifies cleanup behavior, not universal recovery from GPU memory
-exhaustion or driver faults on unconnected devices.
+Добавлен маркер рецепта на основе SHA-256, проверяемый CMake, включая общую
+сборку для Underground 1, чтобы отклонять устаревшую или непроверенную
+подготовку. Добавлены защиты на случай отсутствия хэндлов swapchain/surface
+Vulkan и повторного разрушения surface. `ports/dxvk_android/test_reset_cleanup.py`
+извлекает фактические тела подготовленных методов в хостовую тестовую
+обвязку. Инъекция сбоя в каждый из четырёх слотов буфера, успешный повтор,
+пустая очистка, отсутствующие указатели на функции расширений и повторное
+уничтожение хэндла — все эти кейсы проходят на MSVC C++17. Это подтверждает
+корректность поведения очистки, а не универсальное восстановление после
+исчерпания видеопамяти или сбоев драйвера на неподключённых устройствах.
 
-## Orientation and log overhead
+## Ориентация экрана и накладные расходы на логирование
 
-[#633](https://github.com/codepdbh/nfsu2-recompiled/issues/633) reports
-that a controller attached in the opposite horizontal orientation leaves
-the game upside down. Launcher, GPU probe and game now use
-`sensorLandscape`, permitting either horizontal orientation.
+[#633](https://github.com/codepdbh/nfsu2-recompiled/issues/633) сообщает, что
+геймпад, подключённый в противоположной горизонтальной ориентации, оставляет
+игру перевёрнутой. Лаунчер, GPU probe и сама игра теперь используют
+`sensorLandscape`, допуская любую из двух горизонтальных ориентаций.
 
-[#672](https://github.com/codepdbh/nfsu2-recompiled/issues/672) includes
-large runs of repeated module lookups. Both runtimes now log a module
-name only on its first lookup, reducing unnecessary logging work while
-preserving the first diagnostic. Reports include the actual installed
-APK ABI to distinguish 32-bit and 64-bit failures.
+[#672](https://github.com/codepdbh/nfsu2-recompiled/issues/672) включает
+большие серии повторяющихся поисков модулей. Оба рантайма теперь логируют имя
+модуля только при первом поиске, снижая лишнюю нагрузку на логирование и
+сохраняя при этом первичную диагностику. Отчёты включают фактический ABI
+установленного APK, чтобы различать сбои на 32-битных и 64-битных сборках.
 
-## Still open
+## Пока открыто
 
-The #672 native fault resolves to `sub_005C5F70` in the matching v0.14.5
-library. Other reports resolve to `sub_0043DBB0` (a string scan). These
-need additional state and reproduction before a behavioral change is
-justified. The `RaiseException` report in #656 lacks exception arguments
-and cannot be classified as fixed. No claim of fixing every crash,
-every MediaTek device, audio complaint, or performance report is made.
+Нативный сбой из #672 указывает на `sub_005C5F70` в соответствующей библиотеке
+v0.14.5. Другие отчёты указывают на `sub_0043DBB0` (сканирование строки). Для
+этих случаев нужны дополнительные данные о состоянии и воспроизведение, прежде
+чем вносить изменение в поведение. Отчёту о `RaiseException` в #656 не хватает
+аргументов исключения, и его нельзя классифицировать как исправленный. Не
+заявляется об исправлении каждого краша, каждого устройства MediaTek, жалобы
+на звук или отчёта о производительности.
 
-## Validation and candidate status
+## Валидация и статус кандидата
 
-Both architectures compile and were installed on the connected Redmi
-Note 8. ARM64 reached menus; ARMv7 was verified running through
-`/system/bin/app_process32` and presented the intro. The initial ARM64
-test, after an app background/resume cycle, stalled while loading a quick
-race. The diagnostic recorded guest function `0x00669286`, without the
-ClearContainer native crash. This separate stall is not claimed fixed.
-The build remains a test candidate, not universal gameplay validation.
+Оба варианта архитектуры собираются и были установлены на подключённый Redmi
+Note 8. ARM64 дошла до меню; ARMv7 была проверена через запуск
+`/system/bin/app_process32` и показала интро. При первом тесте ARM64, после
+цикла сворачивания/разворачивания приложения, произошло зависание при загрузке
+быстрой гонки. Диагностика зафиксировала гостевую функцию `0x00669286`, без
+нативного краша ClearContainer. Это отдельное зависание не заявляется как
+исправленное. Сборка остаётся тестовым кандидатом, а не прошедшей
+универсальную валидацию геймплея.
 
-Version, signing certificate, ELF architecture and sensorLandscape
-manifest values were verified for both APKs. Native symbols matching
-each packaged Build ID were archived locally. No affected MediaTek or
-Unisoc device is connected for direct reproduction of the reported GPU
-failures; injected cleanup tests cover the diagnosed failure paths.
+Версия, сертификат подписи, архитектура ELF и значения sensorLandscape в
+манифесте были проверены для обоих APK. Нативные символы, соответствующие
+каждому упакованному Build ID, заархивированы локально. Ни одно затронутое
+устройство MediaTek или Unisoc не подключено для прямого воспроизведения
+заявленных сбоев GPU; тесты инъекции очистки покрывают диагностированные
+пути сбоя.
 
-## White screen recovery during this validation
+## Восстановление после белого экрана в ходе этой валидации
 
-The user confirmed a white screen when entering a race. A second fresh
-ARM64 session stalled too, without an app-switch cycle. A native debugger
-capture, resolved against the matching APK symbols, shows the guest render
-thread in D3D9SwapChainEx::SynchronizePresent, waiting for submission, and
-the submission worker inside Vulkan queue presentation. The earlier guest
-function in the watchdog is not proof of where the native wait occurs.
+Пользователь подтвердил белый экран при входе в гонку. Вторая свежая сессия
+ARM64 тоже зависла, без цикла переключения приложения. Снимок нативного
+отладчика, сопоставленный с символами соответствующего APK, показывает, что
+гостевой поток рендеринга находится в D3D9SwapChainEx::SynchronizePresent,
+ожидая отправки, а воркер отправки — внутри презентации очереди Vulkan. Более
+ранняя гостевая функция из watchdog не является доказательством того, где
+именно происходит нативное ожидание.
 
-Stopped the game and renamed only the app-private cache/dxvk directory to
-a backup. With a new graphics cache, the same APK reached a four-car race
-(lap 1/3, frames presenting) and the user confirmed it worked. This points
-to the old graphics cache as a trigger; it does not isolate which cache
-file or driver behavior caused the wait.
+Игра была остановлена, и только приватная для приложения директория
+cache/dxvk была переименована в резервную копию. С новым графическим кэшем тот
+же APK дошёл до гонки с четырьмя машинами (круг 1/3, кадры отображаются), и
+пользователь подтвердил, что это сработало. Это указывает на старый
+графический кэш как на триггер; но не позволяет точно определить, какой файл
+кэша или поведение драйвера стало причиной ожидания.
 
-Both apps now use cache epoch dxvk-v2, leaving older cache files intact
-and rebuilding shaders on the first run after this renderer update.
-The launcher also offers a graphics-cache reset with confirmation that
-the current game session closes. It targets only the game process with
-the same UID and exact package process name, then renames the graphics
-cache within getCacheDir(). Game files, profiles and settings are not
-changed. The old cache is retained as a private-cache backup.
+Оба приложения теперь используют эпоху кэша dxvk-v2, оставляя старые файлы
+кэша нетронутыми и пересобирая шейдеры при первом запуске после этого
+обновления рендерера. Лаунчер также предлагает сброс графического кэша с
+подтверждением того, что текущая игровая сессия будет закрыта. Он нацелен
+только на процесс игры с тем же UID и точным именем процесса пакета, затем
+переименовывает графический кэш внутри getCacheDir(). Игровые файлы, профили
+и настройки при этом не изменяются. Старый кэш сохраняется как резервная копия
+в приватном кэше.

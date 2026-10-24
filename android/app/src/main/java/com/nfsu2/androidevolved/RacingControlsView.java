@@ -70,7 +70,7 @@ final class RacingControlsView extends View {
         super(context); this.keys=keys; this.textInput=textInput;
         layouts=context.getSharedPreferences("touch_layouts_v1",Context.MODE_PRIVATE);
         style=layouts.getString("style","classic");this.configureTilt=configureTilt;this.configureFrameLimit=configureFrameLimit;
-        setContentDescription("Game controls");
+        setContentDescription("Элементы управления игрой");
         setHapticFeedbackEnabled(true);
         line.setStyle(Paint.Style.STROKE);line.setStrokeCap(Paint.Cap.ROUND);line.setStrokeJoin(Paint.Join.ROUND);
         text.setTextAlign(Paint.Align.CENTER);text.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
@@ -168,12 +168,12 @@ final class RacingControlsView extends View {
         for(Control c:controls)drawControl(canvas,c);
         if(editing) {
             float w=getWidth()/scale;
-            drawToolbarButton(canvas,new RectF(w/2-250,18,w/2-150,58),"RESTABLECER");
+            drawToolbarButton(canvas,new RectF(w/2-250,18,w/2-150,58),"СБРОС");
             drawToolbarButton(canvas,new RectF(w/2-142,18,w/2-102,58),"−");
             drawToolbarButton(canvas,new RectF(w/2-94,18,w/2-54,58),"+");
-            drawToolbarButton(canvas,new RectF(w/2-46,18,w/2+58,58),"SAVE");
-            drawToolbarButton(canvas,new RectF(w/2+66,18,w/2+170,58),"CANCEL");
-            drawToolbarButton(canvas,new RectF(w/2-65,70,w/2+65,106),"OPCIONES");
+            drawToolbarButton(canvas,new RectF(w/2-46,18,w/2+58,58),"СОХРАНИТЬ");
+            drawToolbarButton(canvas,new RectF(w/2+66,18,w/2+170,58),"ОТМЕНА");
+            drawToolbarButton(canvas,new RectF(w/2-65,70,w/2+65,106),"НАСТРОЙКИ");
         }
         canvas.restore();
     }
@@ -338,43 +338,43 @@ final class RacingControlsView extends View {
         invalidate();return true;
     }
     private void showOptions() {
-        new AlertDialog.Builder(getContext()).setTitle("Control options")
-                .setItems(new String[]{"Style: Classic / Xbox / PlayStation","Tilt steering","FPS limit","Save layout with name","Load custom layout"},(dialog,which)->{
+        new AlertDialog.Builder(getContext()).setTitle("Настройки управления")
+                .setItems(new String[]{"Стиль: классика / Xbox / PlayStation","Управление наклоном","Лимит FPS","Сохранить раскладку с названием","Загрузить сохранённую раскладку"},(dialog,which)->{
                     if(which==0)chooseStyle();else if(which==1)configureTilt.run();
                     else if(which==2)configureFrameLimit.run();else if(which==3)saveNamedLayout();else loadNamedLayout();
-                }).setNegativeButton("Close",null).show();
+                }).setNegativeButton("Закрыть",null).show();
     }
     private void chooseStyle() {
         String[] ids={"classic","xbox","playstation"};
-        new AlertDialog.Builder(getContext()).setTitle("Driving style")
-                .setSingleChoiceItems(new String[]{"Classic · arrows and pedals","Xbox · wheel and A / B / X / Y","PlayStation · wheel and × / ○ / □ / △"},style.equals("classic")?0:style.equals("xbox")?1:2,(dialog,which)->{
+        new AlertDialog.Builder(getContext()).setTitle("Стиль управления")
+                .setSingleChoiceItems(new String[]{"Классика · стрелки и педали","Xbox · руль и A / B / X / Y","PlayStation · руль и × / ○ / □ / △"},style.equals("classic")?0:style.equals("xbox")?1:2,(dialog,which)->{
                     style=ids[which];layouts.edit().putString("style",style).apply();
                     layoutControls();dialog.dismiss();
-                }).setNegativeButton("Cancel",null).show();
+                }).setNegativeButton("Отмена",null).show();
     }
     private void saveNamedLayout() {
-        EditText name=new EditText(getContext());name.setSingleLine();name.setHint("Layout name");
+        EditText name=new EditText(getContext());name.setSingleLine();name.setHint("Название раскладки");
         name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(24)});
-        AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle("Save layout for "+(racing?"driving":"menu"))
-                .setView(name).setPositiveButton("Save",null).setNegativeButton("Cancel",null).create();
+        AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle("Сохранить раскладку для "+(racing?"вождения":"меню"))
+                .setView(name).setPositiveButton("Сохранить",null).setNegativeButton("Отмена",null).create();
         dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            String value=name.getText().toString().trim();if(value.isEmpty()) {name.setError("Enter a name");return;}
+            String value=name.getText().toString().trim();if(value.isEmpty()) {name.setError("Введите название");return;}
             try {
                 JSONObject data=new JSONObject();data.put("style",style);
                 for(Control c:controls) {JSONObject item=new JSONObject();
                     item.put("x",c.area.centerX()/(getWidth()/scale));item.put("y",c.area.centerY()/(getHeight()/scale));
                     item.put("size",c.area.width()/c.original.width());data.put(c.id,item);}
                 layouts.edit().putString("preset."+(racing?"race.":"menu.")+value,data.toString()).apply();
-                saveLayout();Toast.makeText(getContext(),"Layout saved: "+value,Toast.LENGTH_SHORT).show();dialog.dismiss();
-            }catch(org.json.JSONException exception) {name.setError("Could not save layout");}
+                saveLayout();Toast.makeText(getContext(),"Раскладка сохранена: "+value,Toast.LENGTH_SHORT).show();dialog.dismiss();
+            }catch(org.json.JSONException exception) {name.setError("Не удалось сохранить раскладку");}
         }));dialog.show();
     }
     private void loadNamedLayout() {
         String prefix="preset."+(racing?"race.":"menu.");ArrayList<String> names=new ArrayList<>();
         for(String key:layouts.getAll().keySet())if(key.startsWith(prefix))names.add(key.substring(prefix.length()));
         java.util.Collections.sort(names);
-        if(names.isEmpty()) {Toast.makeText(getContext(),"No saved layouts for this mode yet",Toast.LENGTH_SHORT).show();return;}
-        new AlertDialog.Builder(getContext()).setTitle("Load layout").setItems(names.toArray(new String[0]),(dialog,which)->{
+        if(names.isEmpty()) {Toast.makeText(getContext(),"Для этого режима пока нет сохранённых раскладок",Toast.LENGTH_SHORT).show();return;}
+        new AlertDialog.Builder(getContext()).setTitle("Загрузить раскладку").setItems(names.toArray(new String[0]),(dialog,which)->{
             try {
                 JSONObject data=new JSONObject(layouts.getString(prefix+names.get(which),"{}"));
                 style=data.getString("style");SharedPreferences.Editor save=layouts.edit().putString("style",style);
@@ -382,8 +382,8 @@ final class RacingControlsView extends View {
                     JSONObject item=data.getJSONObject(id);save.putFloat(id+".x",(float)item.getDouble("x"))
                             .putFloat(id+".y",(float)item.getDouble("y")).putFloat(id+".size",(float)item.getDouble("size"));}
                 save.apply();layoutControls();
-            }catch(org.json.JSONException exception) {Toast.makeText(getContext(),"Could not load layout",Toast.LENGTH_SHORT).show();}
-        }).setNegativeButton("Cancel",null).show();
+            }catch(org.json.JSONException exception) {Toast.makeText(getContext(),"Не удалось загрузить раскладку",Toast.LENGTH_SHORT).show();}
+        }).setNegativeButton("Отмена",null).show();
     }
 
     // ---- Input -------------------------------------------------------------------------------------------

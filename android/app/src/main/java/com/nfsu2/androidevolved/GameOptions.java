@@ -24,25 +24,25 @@ final class GameOptions {
             TEXTURES = "textures", MINIMAP = "minimap", LANGUAGE = "language";
 
     static final Option[] ALL = {
-            new Option(RESOLUTION, "Internal resolution", "75",
+            new Option(RESOLUTION, "Внутреннее разрешение", "75",
                     new String[] {"100", "75", "50", "720"},
-                    new String[] {"Native · maximum quality", "75% · balanced", "50% · maximum performance",
+                    new String[] {"Нативное · максимальное качество", "75% · сбалансированно", "50% · максимальная производительность",
                             "1280×720 · 16:9"}),
-            new Option(FPS, "FPS limit", "120",
+            new Option(FPS, "Лимит FPS", "120",
                     new String[] {"30", "60", "90", "120", "0"},
-                    new String[] {"30 FPS · saves battery", "60 FPS", "90 FPS", "120 FPS", "Uncapped"}),
-            new Option(WIDESCREEN, "Widescreen", "on",
+                    new String[] {"30 FPS · экономия батареи", "60 FPS", "90 FPS", "120 FPS", "Без ограничения"}),
+            new Option(WIDESCREEN, "Широкий экран", "on",
                     new String[] {"on", "off"},
-                    new String[] {"HUD and camera corrected", "Original 4:3 stretched"}),
-            new Option(MINIMAP, "Minimap", "top",
+                    new String[] {"HUD и камера скорректированы", "Оригинальный формат 4:3, растянуто"}),
+            new Option(MINIMAP, "Миникарта", "top",
                     new String[] {"top", "bottom"},
-                    new String[] {"Top-left", "Bottom-left (original)"}),
-            new Option(LATENCY, "CPU/GPU sync", "2",
+                    new String[] {"Слева сверху", "Слева снизу (оригинал)"}),
+            new Option(LATENCY, "Синхронизация CPU/GPU", "2",
                     new String[] {"2", "1"},
-                    new String[] {"Performance · CPU and GPU in parallel", "Low latency · lower FPS"}),
-            new Option(TEXTURES, "Compressed textures", "auto",
+                    new String[] {"Производительность · CPU и GPU работают параллельно", "Низкая задержка · ниже FPS"}),
+            new Option(TEXTURES, "Сжатые текстуры", "auto",
                     new String[] {"auto", "cpu"},
-                    new String[] {"Automatic · GPU if supported", "Convert on CPU · compatibility"}),
+                    new String[] {"Автоматически · GPU при поддержке", "Конвертация на CPU · совместимость"}),
     };
 
     private static final String PREFS = "nfsu2_game";

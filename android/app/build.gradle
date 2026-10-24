@@ -1,4 +1,12 @@
 plugins { id 'com.android.application' }
+
+// Game files bundled into the APK: -PnfsGameData=DIR or nfs.gameData=DIR in local.properties.
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) localPropsFile.withInputStream { localProps.load(it) }
+def gameData = project.findProperty('nfsGameData') ?: localProps.getProperty('nfs.gameData')
+def gameAssets = layout.buildDirectory.dir('game-assets').get().asFile
+
 android {
     namespace 'com.nfsu2.androidevolved'
     compileSdk 35
@@ -20,6 +28,19 @@ android {
     if (file('../../src/recomp/gen').exists()) {
         externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.30.5' } }
     }
+    if (gameData) {
+        sourceSets { main { assets.srcDir gameAssets } }
+        // Stored, not deflated: the launcher streams ~1.8 GB out on first run.
+        androidResources { noCompress '' }
+    }
     // adrenotools opens its namespace hook libraries by path from nativeLibraryDir.
     packaging { jniLibs { useLegacyPackaging true } }
+}
+
+if (gameData) {
+    def syncGameData = tasks.register('syncGameData', Sync) {
+        from(gameData) { exclude 'eauninstall.exe', '*.NFO', '*.nfo' }
+        into new File(gameAssets, 'nfsu2')
+    }
+    tasks.named('preBuild') { dependsOn syncGameData }
 }

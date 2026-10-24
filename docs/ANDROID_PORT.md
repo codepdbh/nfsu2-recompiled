@@ -1,45 +1,46 @@
 # Android ARM64 / Vulkan 1.1
 
-Current runtime: [0.4.0 input/audio/device status](ANDROID_INPUT_AUDIO_TEST.md).
-The original initial splash has rendered through DXVK on the physical phone.
-Prepare the pinned graphics dependency as described in
-[DXVK build prerequisites](../ports/dxvk_android/README.md) before running Gradle.
+Текущее состояние рантайма: [статус ввода/аудио/устройства 0.4.0](ANDROID_INPUT_AUDIO_TEST.md).
+Исходный стартовый сплэш отрисовывается через DXVK на физическом телефоне. Перед запуском
+Gradle подготовьте закреплённую (pinned) зависимость графики, как описано в
+[предварительных требованиях сборки DXVK](../ports/dxvk_android/README.md).
 
-Windows gameplay accepted as validated by the owner on 2026-10-07.
-Update: [portable guest integration](ANDROID_RUNTIME.md) now compiles the full
-generated game code for ARM64, maps the PE, binds imports and attempts its CRT
-entry. The initial bootstrap test results below predate this connection.
-The independent `android/` build advances the port without changing the
-MSVC x86 reference build. CRT bring-up is connected; the APK is not playable.
+Геймплей на Windows принят владельцем как подтверждённый 2026-10-07.
+Обновление: [портируемая гостевая интеграция](ANDROID_RUNTIME.md) теперь компилирует
+полный сгенерированный код игры для ARM64, маппит PE, связывает импорты и пытается выполнить
+вход в её CRT. Результаты первоначального теста bootstrap ниже предшествуют этому подключению.
+Независимая сборка `android/` развивает порт, не меняя референсную сборку MSVC x86. Запуск CRT
+подключён; APK пока не играбелен.
 
-## Diagnostic renderer and storage foundation
+## Диагностический рендерер и основа хранения данных
 
-- Android NativeActivity, Android 8+ (API 26), arm64-v8a only.
-- Vulkan instance requesting 1.1, graphics/present queue and FIFO swapchain.
-- Render-pass clear and presentation using only Vulkan 1.1 core and Android
-  surface/swapchain extensions. No descriptor indexing, shaderInt64, buffer
-  device address, dynamic rendering or synchronization2 requirements.
-- Surface format/usage/extent/composite-alpha checks, pause/resume cleanup,
-  window recreation and out-of-date swapchain handling.
-- Separate render-finished semaphore per swapchain image. Serialized queue
-  completion for initial bring-up; frame fences are a later performance step.
-- GuestMemory reserves a 4 GiB virtual address space with inaccessible pages;
-  commit uses the device page size. Guest addresses remain uint32 offsets;
-  host pointers remain 64-bit. Startup checks image/high addresses and rejects
-  ranges that wrap. The class is connected to ADDR, the PE loader and explicit
-  guest calls; guest heap services are implemented. Reservation is not 4 GiB of
-  physical RAM.
-- Fixed game root: `/storage/emulated/0/nfsu2` (Internal storage/nfsu2).
-  The application checks readable data folders and executable header/size.
-  Android 11+ uses the all-files access settings screen; Android 8–10 requests
-  read permission. Files remain external to the APK.
-- Launcher icon from `ICONO/ICONO.png`, and a diagnostic status overlay.
+- Android NativeActivity, Android 8+ (API 26), только arm64-v8a.
+- Экземпляр Vulkan запрашивает версию 1.1, очередь графики/презентации и FIFO swapchain.
+- Очистка render pass и презентация используют только ядро Vulkan 1.1 и расширения
+  surface/swapchain для Android. Никаких требований descriptor indexing, shaderInt64,
+  buffer device address, dynamic rendering или synchronization2.
+- Проверки формата/usage/extent/composite-alpha поверхности, очистка при
+  паузе/возобновлении, пересоздание окна и обработка устаревшего (out-of-date) swapchain.
+- Отдельный семафор render-finished на каждое изображение swapchain. Для первоначального
+  bring-up завершение очереди сериализовано; фреймовые fence — следующий шаг по
+  производительности.
+- GuestMemory резервирует 4 ГиБ виртуального адресного пространства с недоступными
+  страницами; commit использует размер страницы устройства. Гостевые адреса остаются
+  32-битными смещениями (uint32); хостовые указатели остаются 64-битными. При старте
+  проверяются адрес образа и верхние адреса, диапазоны с переполнением (wrap) отклоняются.
+  Класс подключён к ADDR, загрузчику PE и явным гостевым вызовам; сервисы гостевой кучи
+  реализованы. Резервирование — это не 4 ГиБ физической RAM.
+- Фиксированный корень игры: `/storage/emulated/0/nfsu2` (Internal storage/nfsu2).
+  Приложение проверяет читаемость папок с данными и заголовок/размер исполняемого файла.
+  На Android 11+ используется экран настроек доступа ко всем файлам, на Android 8–10
+  запрашивается разрешение на чтение. Файлы остаются вне APK.
+- Иконка лаунчера берётся из `ICONO/ICONO.png`, плюс диагностический оверлей статуса.
 
-## Build and inspect
+## Сборка и проверка
 
-Install Android SDK platform 35, NDK 28.2.13676358, CMake 3.30.5, and a JDK
-compatible with Android Gradle Plugin 8.7.3. Set ANDROID_HOME and JAVA_HOME,
-or configure the SDK through Android Studio. From `android/`:
+Установите Android SDK platform 35, NDK 28.2.13676358, CMake 3.30.5 и JDK, совместимый
+с Android Gradle Plugin 8.7.3. Задайте ANDROID_HOME и JAVA_HOME, либо настройте SDK через
+Android Studio. Из `android/`:
 
 ```powershell
 ./gradlew.bat --no-daemon assembleDebug
@@ -48,50 +49,53 @@ adb shell am start -n com.nfsu2.androidevolved/.LauncherActivity
 adb logcat -s NFSU2
 ```
 
-Copy files first with `scripts/copy_android_data.ps1 -GameRoot <installation>`
-and allow storage access when prompted. The launcher selects the game language
-before starting the guest. The following describes the historical bootstrap:
-a dark teal screen and status
-text, `Guest memory self-check passed`, `Game data readable`, `Bootstrap ready`
-and `Presented frames` in logcat. Runtime 0.2.0 additionally attempts the actual
-CRT entry and reports its first unsupported HLE import. No game assets are
-packaged; generated code from the owner's copy is included in this local APK.
-See [device test report](ANDROID_DEVICE_TEST.md) for version 0.1.0 real-device
-verification. Version 0.2.0 includes locally generated code and has now passed
-initial ARM64 runtime and Home/return checks; see ANDROID_RUNTIME.md for evidence.
+Сначала скопируйте файлы через `scripts/copy_android_data.ps1 -GameRoot <installation>`
+и разрешите доступ к хранилищу при запросе. Лаунчер даёт выбрать язык игры перед запуском
+гостевой системы. Далее описан исторический процесс bootstrap:
+тёмно-бирюзовый экран и текст статуса, `Guest memory self-check passed`, `Game data readable`,
+`Bootstrap ready` и `Presented frames` в logcat. Рантайм 0.2.0 дополнительно пытается
+выполнить реальный вход в CRT и сообщает о первом неподдерживаемом HLE-импорте. Игровые
+ассеты не упакованы; в этот локальный APK включён сгенерированный код из копии владельца.
+Проверку на реальном устройстве для версии 0.1.0 см. в
+[отчёте о тестировании устройства](ANDROID_DEVICE_TEST.md). Версия 0.2.0 включает локально
+сгенерированный код и теперь прошла первичные проверки рантайма ARM64 и Home/возврата;
+доказательства — в ANDROID_RUNTIME.md.
 
-## Reference review
+## Обзор референсов
 
 - https://github.com/codepdbh/NFS-CARBON-360-ANDROID-RECOMP
-  revision 08251847d48222aa6304b9ee521bfe8f430550fa
+  ревизия 08251847d48222aa6304b9ee521bfe8f430550fa
 - https://github.com/codepdbh/nfsmw-android
-  revision bc0fe33c4b4d9a5147f790122fb4af39f3734f1c
+  ревизия bc0fe33c4b4d9a5147f790122fb4af39f3734f1c
 
-Both target Xbox 360 PowerPC/Xenos through ReXGlue. Their native renderer uses
-Xenos registers and title-specific hooks; it cannot directly replace PC D3D9
-or the x86 runtime. Useful reference patterns: optional 64-bit GPU addressing,
-Vulkan 1.1 shader compatibility, BC texture CPU fallback, shader caches and
-Android lifecycle. NFSU2 should generate SPIR-V for Vulkan 1.1 directly rather
-than copy a shader version conversion specialized to a different library.
-Their renderer code has not been copied into this MIT project. The standard
-Gradle wrapper launchers/JAR were obtained from the MW reference (Gradle's
-Apache-licensed tooling); the application and Vulkan bootstrap are new code.
+Оба нацелены на Xbox 360 PowerPC/Xenos через ReXGlue. Их нативный рендерер использует
+регистры Xenos и хуки под конкретную игру; он не может напрямую заменить PC D3D9 или
+x86-рантайм. Полезные референсные паттерны: опциональная 64-битная адресация GPU,
+совместимость шейдеров с Vulkan 1.1, CPU-фолбэк для BC-текстур, кэши шейдеров и жизненный
+цикл Android. NFSU2 должен генерировать SPIR-V для Vulkan 1.1 напрямую, а не копировать
+конверсию версии шейдеров, заточенную под другую библиотеку. Код их рендерера не копировался
+в этот MIT-проект. Стандартные лаунчеры/JAR обёртки Gradle взяты из референса MW (инструментарий
+Gradle под лицензией Apache); приложение и bootstrap Vulkan — новый код.
 
-## Original bootstrap roadmap (historical)
+## Дорожная карта исходного bootstrap (историческая)
 
-1. Portable x86 machine state and explicit guest callback dispatch, with
-   complete integer/x87/MMX/SSE/MXCSR/flags state and serialized guest threads.
-2. Connect guest memory to generated ADDR accesses and a relocatable PE loader.
-   Audit unaligned accesses and host-pointer casts for ARM64 before execution.
-3. Bind used Win32 imports to HLE; add guest handles and COM objects/vtables in
-   guest memory. Never store native function/object pointers in guest uint32s.
-4. D3D9 shim adapter: resources, locks/uploads, state, vertex declarations,
-   draw commands and D3D9 bytecode-to-SPIR-V translation. Start with an isolated
-   textured draw, then the intro/menu; use race traces to complete coverage.
-5. DXT1/DXT5 CPU-to-RGBA fallback if BC formats are unsupported. Check depth,
-   render-target and sampler capabilities; expose only supported D3D9 caps.
-6. Android files/import, audio, input and game lifecycle, then menu and race.
+1. Портируемое состояние x86-машины и явная диспетчеризация гостевых колбэков, с полным
+   состоянием целочисленных регистров/x87/MMX/SSE/MXCSR/флагов и сериализованными
+   гостевыми потоками.
+2. Подключить гостевую память к сгенерированным обращениям ADDR и релоцируемому загрузчику
+   PE. Проверить невыровненные обращения и приведения хостовых указателей для ARM64 перед
+   выполнением.
+3. Связать используемые импорты Win32 с HLE; добавить гостевые хендлы и объекты/vtable
+   COM в гостевой памяти. Никогда не хранить нативные указатели на функции/объекты в
+   гостевых uint32.
+4. Шим-адаптер D3D9: ресурсы, блокировки/заливки (locks/uploads), состояние, объявления
+   вершин, команды отрисовки и трансляция байткода D3D9 в SPIR-V. Начать с изолированной
+   текстурированной отрисовки, затем интро/меню; использовать трейсы гонок для полного
+   покрытия.
+5. CPU-фолбэк DXT1/DXT5 в RGBA, если форматы BC не поддерживаются. Проверить возможности
+   глубины, render target и сэмплера; раскрывать только поддерживаемые возможности D3D9.
+6. Файлы/импорт для Android, аудио, ввод и жизненный цикл игры, затем меню и гонка.
 
-The game's statically linked D3DX must also run correctly in the portable guest
-runtime or be replaced at identified boundaries. Xbox 360 shader containers
-and their shader tooling are not PC D3D9 shader inputs.
+Статически слинкованный D3DX игры также должен корректно работать в портируемом гостевом
+рантайме либо быть заменён на выявленных границах. Контейнеры шейдеров Xbox 360 и их
+инструментарий для шейдеров не являются входными данными для шейдеров PC D3D9.

@@ -1,40 +1,41 @@
-# Function recovery
+# Восстановление функций
 
-Sources: entry point, recursive descent over direct `call`/`jmp` targets,
-prologue scan, jump tables, stored code pointers in data (pcrecomp disasm32),
-plus seeds from `vtable_scan.py` (4,432 methods) and `rtti.py` (6 methods).
-Input: `work/SPEED2.analysis.exe` (relocations restored).
+Источники: точка входа, рекурсивный обход по прямым целям `call`/`jmp`,
+сканирование прологов, таблицы переходов, сохранённые указатели на код в
+данных (pcrecomp disasm32), плюс затравки из `vtable_scan.py` (4,432 метода) и
+`rtti.py` (6 методов). Вход: `work/SPEED2.analysis.exe` (релокации
+восстановлены).
 
-| Stat | Value |
+| Параметр | Значение |
 |---|---|
 | detected_functions | 27,742 |
-| of which aliases | 4,599 (2,220 labels inside another body, 2,379 C++ EH stubs/funclets) |
-| thunks / leaves | 71 / 8,065 |
-| functions reached only via data pointers | 2,293 |
-| vtable_targets (seeds) | 4,432 |
+| из них алиасы | 4,599 (2,220 меток внутри другого тела, 2,379 C++ EH-заглушек/фанклетов) |
+| thunk'ов / листьев | 71 / 8,065 |
+| функций, достижимых только через указатели в данных | 2,293 |
+| vtable_targets (затравки) | 4,432 |
 | RTTI_methods | 6 |
-| entries dropped (not instruction boundaries) | 388 |
-| data pointers rejected (inside an instruction / not code) | 9,239 / 53 |
-| covered_text_bytes | 3,544,709 of 3,676,913 |
-| coverage_percent | 96.4 % of `.text` |
+| отброшенных записей (не являются границами инструкций) | 388 |
+| отклонённых указателей в данных (внутри инструкции / не код) | 9,239 / 53 |
+| covered_text_bytes | 3,544,709 из 3,676,913 |
+| coverage_percent | 96.4 % от `.text` |
 
-## The uncovered 132,204 bytes (`scripts/coverage_gaps.py`)
+## Непокрытые 132,204 байта (`scripts/coverage_gaps.py`)
 
-| Class | gaps | bytes |
+| Класс | пробелов | байт |
 |---|---|---|
 | padding (int3/nop/zero) | 12,281 | 96,170 |
-| pointer tables in `.text` (contain relocation slots) | 425 | 33,914 |
-| decodes as code, unreached | 36 | 1,937 |
-| unknown | 22 | 183 |
+| таблицы указателей в `.text` (содержат слоты релокаций) | 425 | 33,914 |
+| декодируется как код, не достигнуто | 36 | 1,937 |
+| неизвестно | 22 | 183 |
 
-So unrecovered *code* is at most ~2.1 KB: **≈99.9 % of the real code is
-catalogued**, without counting data as functions.
+Таким образом, нераспознанного *кода* максимум ~2.1 КБ: **≈99.9 % реального
+кода каталогизировано**, без учёта данных, ошибочно принятых за функции.
 
-## Known problems
+## Известные проблемы
 
-- `suspected_false_starts`: 0x6D5610 lifts to BCD/`arpl`/`bound`/`insb`/`lcall`
-  — data decoded as code. To be excluded.
-- `suspected_missing_starts`: the 36 code-like gaps (e.g. 0x43BD51, 0x44052F,
-  0x6945EA) need checking; they may be dead code.
-- nfsu2-re's 1,693 named functions have not yet been scored against the
-  catalog (`score_recovery.py`).
+- `suspected_false_starts`: 0x6D5610 лифтится в BCD/`arpl`/`bound`/`insb`/`lcall`
+  — данные, раскодированные как код. Подлежит исключению.
+- `suspected_missing_starts`: 36 похожих на код пробелов (например, 0x43BD51,
+  0x44052F, 0x6945EA) нужно проверить; возможно, это мёртвый код.
+- 1,693 именованные функции из nfsu2-re пока не сверены с каталогом
+  (`score_recovery.py`).

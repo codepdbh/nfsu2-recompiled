@@ -1,35 +1,35 @@
-# Lift report
+# Отчёт о лифтинге
 
-Driver: `scripts/run_lift.py lift` (pcrecomp `lift32` + patched `simd32`),
-`precise_carry=True`, 400 functions per file.
+Драйвер: `scripts/run_lift.py lift` (pcrecomp `lift32` + патченый `simd32`),
+`precise_carry=True`, 400 функций на файл.
 
-| Metric | Value |
+| Метрика | Значение |
 |---|---|
-| functions lifted | 27,742 |
-| lift failures (exceptions) | 0 |
-| files | 70 + `recomp_funcs.h`, `recomp_dispatch.c`, `recomp_imports.c` |
-| C lines | 8,935,801 (454 MB, with one address comment per instruction) |
-| largest file | `recomp_0034.c`, 1.6 M lines; biggest functions 18–20 k lines (around 0x620AE0) |
-| lift time | 86 s |
-| `RECOMP_UNIMPL` sites | 2,923 |
-| ICALL / ITAIL sites | 13,271 / 3,126 |
+| функций поднято (lift) | 27,742 |
+| сбоев лифтинга (исключения) | 0 |
+| файлов | 70 + `recomp_funcs.h`, `recomp_dispatch.c`, `recomp_imports.c` |
+| строк C | 8,935,801 (454 МБ, с комментарием-адресом на каждую инструкцию) |
+| самый большой файл | `recomp_0034.c`, 1.6 M строк; крупнейшие функции 18–20 k строк (в районе 0x620AE0) |
+| время лифтинга | 86 с |
+| мест `RECOMP_UNIMPL` | 2,923 |
+| мест ICALL / ITAIL | 13,271 / 3,126 |
 
-## RECOMP_UNIMPL breakdown
+## Разбивка RECOMP_UNIMPL
 
-| Instruction | sites | Assessment |
+| Инструкция | мест | Оценка |
 |---|---|---|
-| 3DNow! (`pf*`, `pi2fd`, `pswapd`) | 2,890 | CPU-dispatched alternatives; avoid by reporting no 3DNow! in CPUID |
-| `int` | 17 | 0x55FF54, 0x769DBA… — to inspect (CRT `int 3`/debug traps?) |
-| `fnstenv` / `fldenv` | 4 | CRT FPU environment save/restore (0x76A496, 0x76A74E) — must implement |
-| `lahf` | 2 | 0x6F5FC5 real; implement |
-| `sldt daa das aaa aas bound arpl insb insd lcall` | 10 | all in 0x6D5610, a false function |
+| 3DNow! (`pf*`, `pi2fd`, `pswapd`) | 2,890 | альтернативы с диспетчеризацией по CPU; можно избежать, если не заявлять 3DNow! в CPUID |
+| `int` | 17 | 0x55FF54, 0x769DBA… — нужно разобраться (CRT `int 3` / отладочные ловушки?) |
+| `fnstenv` / `fldenv` | 4 | сохранение/восстановление окружения FPU в CRT (0x76A496, 0x76A74E) — нужно реализовать |
+| `lahf` | 2 | 0x6F5FC5 реальный случай; реализовать |
+| `sldt daa das aaa aas bound arpl insb insd lcall` | 10 | все в 0x6D5610, ложная функция |
 
-## Compile
+## Компиляция
 
-- `recomp_0010.c` (42 k lines): MSVC x86 `/O1` 1.4 s, OK.
-- `recomp_0034.c` (1.6 M lines): MSVC `/O1` 207 s (101 MB object); clang 22 `-O1` 785 s.
-- Whole project (CMake + Ninja, -j16): 4 min 20 s, 0 errors, 0 unresolved symbols at link.
+- `recomp_0010.c` (42 k строк): MSVC x86 `/O1` 1.4 s, OK.
+- `recomp_0034.c` (1.6 M строк): MSVC `/O1` 207 s (объектный файл 101 МБ); clang 22 `-O1` 785 s.
+- Весь проект (CMake + Ninja, -j16): 4 min 20 s, 0 ошибок, 0 неразрешённых символов на этапе линковки.
 
-After the first run the lift was regenerated with `lahf`, `fnstenv/fldenv`,
-backward-branch yields, one override (0x6F5FC5) and one exclusion (0x6D5610):
-`RECOMP_UNIMPL` sites 2,907 (2,890 3DNow!, 17 `int` in data/unreachable code).
+После первого прогона лифтинг перегенерировали с учётом `lahf`, `fnstenv/fldenv`,
+yield на обратных переходах, одного override (0x6F5FC5) и одного исключения (0x6D5610):
+мест `RECOMP_UNIMPL` стало 2,907 (2,890 — 3DNow!, 17 — `int` в данных/недостижимом коде).

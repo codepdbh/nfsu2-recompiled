@@ -1,100 +1,133 @@
-# Status
+# Статус
 
-## Update 2026-10-07 (evidence from this day's runs)
+## Обновление от 2026-10-07 (данные по запускам этого дня)
 
-| Milestone | State | Evidence |
+| Веха | Статус | Подтверждение |
 |---|---|---|
-| M9 EA logo / intro | **DONE** | movies play; the logos are not skippable in the original either (input reaches the pad queue as event 0x26) |
-| M10 main menu | **DONE** | menus navigate with Enter (synthetic DirectInput events, `NFSU2_TAP`) and real keys (user) |
-| Car rendering | **DONE** | career-menu 350Z renders correctly (window capture of the recompiled build) after patch 0009 |
-| Race loading | **DONE** | attract-mode race loads and runs, 5,400+ frames, no crash (was a null read in 0x005E5110) |
-| M11 garage / M12 player-driven race | IN PROGRESS | user reports cars visible and racing; an end-to-end scripted race is not yet in the test set |
-| Audio | **DONE** | stutter fixed by the fair FIFO machine lock (patch 0008) |
-| Performance | open | user reports menu lag at times; profiler available (`NFSU2_PROFILE=1`) |
+| M9 EA logo / интро | **ГОТОВО** | ролики проигрываются; в оригинале логотипы тоже нельзя пропустить (ввод доходит до очереди пада как событие 0x26) |
+| M10 главное меню | **ГОТОВО** | навигация по меню работает через Enter (синтетические события DirectInput, `NFSU2_TAP`) и реальные клавиши (проверено пользователем) |
+| Рендеринг машины | **ГОТОВО** | 350Z в меню карьеры рендерится корректно (захват окна рекомпилированной сборки) после патча 0009 |
+| Загрузка заезда | **ГОТОВО** | заезд в attract-режиме загружается и работает, 5,400+ кадров без краша (ранее было чтение null в 0x005E5110) |
+| M11 гараж / M12 заезд под управлением игрока | В ПРОЦЕССЕ | по словам пользователя, машины видны и едут; сквозной скриптованный заезд пока не входит в набор тестов |
+| Звук | **ГОТОВО** | заикание исправлено честным FIFO-локом машины (патч 0008) |
+| Производительность | открыто | по словам пользователя, иногда подтормаживает меню; доступен профилировщик (`NFSU2_PROFILE=1`) |
 
-Root causes fixed today: MSVC /O1-/O2 miscompile of signed tests on
-left-aligned 16-bit lazy flags (found and diagnosed by the project owner,
-patch 0009); x87 TOP missing from `fnstsw`; unfair machine lock (audio);
-missing per-thread xmm/mxcsr/flags in native32 (patch 0011); DirectInput
-needing the host HINSTANCE; guest resources (D3DX effects) not found by
-Windows. Tools added: windowed mode, `NFSU2_BACKGROUND`, `NFSU2_TAP`,
-`NFSU2_NATIVE` (original code as oracle), `NFSU2_NATIVE_RANGE` (hybrid
-bisection), real-function difftest, sampling profiler.
+Сегодня устранены следующие первопричины: некорректная компиляция MSVC
+/O1-/O2 знаковых проверок на выровненных влево 16-битных ленивых флагах
+(найдено и продиагностировано владельцем проекта, патч 0009); отсутствие x87
+TOP в `fnstsw`; нечестный лок машины (звук); отсутствие per-thread
+xmm/mxcsr/flags в native32 (патч 0011); необходимость хостового HINSTANCE
+для DirectInput; guest-ресурсы (эффекты D3DX), которые Windows не находит.
+Добавлены инструменты: оконный режим, `NFSU2_BACKGROUND`, `NFSU2_TAP`,
+`NFSU2_NATIVE` (оригинальный код как оракул), `NFSU2_NATIVE_RANGE` (гибридное
+бисекционное сравнение), difftest по реальным функциям, сэмплирующий
+профилировщик.
 
-## Earlier entries
+## Более ранние записи
 
+Последнее обновление: 2026-10-06. Статус DONE помечено только то, что
+подтверждено данными.
 
-Last update: 2026-10-06. Only what has evidence is marked DONE.
-
-| Milestone | State | Evidence |
+| Веха | Статус | Подтверждение |
 |---|---|---|
-| M0 C generated | **DONE** | `run_lift.py lift`: 27,742 functions, 70 files, 8.9 M lines, 0 lift failures |
-| M1 C compiles | **DONE** | CMake + Ninja + MSVC 14.51 x86 `/O1`: all 70 TUs, 0 errors, 4 min 20 s with -j16 (largest TU 207 s) |
-| M2 executable links | **DONE** | `build/NFSU2-Recompiled.exe`, 115 MB, 0 unresolved symbols |
-| M3 CRT initializes | **DONE** | trace: `GetVersionExA`, `HeapCreate`, `TlsAlloc`, `GetStartupInfoA`, environment and locale setup, `_initterm` run through lifted code; `SetUnhandledExceptionFilter(0x766A55)` |
-| M4 original entry point runs | **DONE** | `entering original entry point 0x0075BCC7`; 249 imports bound to Windows, 3 shimmed, 0 unresolved |
-| M5 WinMain | **DONE** | the game's main (0x580E00 → 0x57ED10 → 0x5B7690) runs: single-instance check (Toolhelp process walk), D3DX `DisablePSGP` registry probe, CPU detection, registry settings (`Install Dir`, `Language`…), the multimedia-timer thread (callbacks Windows → lifted code via `timeSetEvent`, ~257/s), the file-system thread |
-| M6 game window | **DONE** | `RegisterClassExA` + `CreateWindowExA("GameFrame", "NFS Underground 2")` + `ShowWindow`; the guest WndProc `0x5CCD60` receives messages through native32's callback path |
-| M7 D3D9 initialization | **DONE** | `Direct3DCreate9(32)`, `CreateDevice` → `S_OK` (640x480 X8R8G8B8 fullscreen, D24S8) |
-| M8 first frame | **DONE** | `Present` → `S_OK`; 1,320 frames in one run, ~496 D3D calls and 14 draws per frame |
-| M9 EA logo / intro | **DONE** | the intro movies play (seen by the user on screen); 34 vertex + 34 pixel shaders compiled from the exe's effect resources |
-| M10 main menu | IN PROGRESS | movies cannot be skipped: input issue below |
-| M11 garage, M12 race | not started | |
+| M0 генерация C | **ГОТОВО** | `run_lift.py lift`: 27,742 функции, 70 файлов, 8.9 M строк, 0 ошибок lift |
+| M1 компиляция C | **ГОТОВО** | CMake + Ninja + MSVC 14.51 x86 `/O1`: все 70 TU, 0 ошибок, 4 мин 20 с при -j16 (самый долгий TU — 207 с) |
+| M2 линковка исполняемого файла | **ГОТОВО** | `build/NFSU2-Recompiled.exe`, 115 МБ, 0 неразрешённых символов |
+| M3 инициализация CRT | **ГОТОВО** | трассировка: `GetVersionExA`, `HeapCreate`, `TlsAlloc`, `GetStartupInfoA`, настройка окружения и локали, `_initterm` выполняется через lifted-код; `SetUnhandledExceptionFilter(0x766A55)` |
+| M4 выполнение оригинальной точки входа | **ГОТОВО** | `entering original entry point 0x0075BCC7`; 249 импортов привязаны к Windows, 3 через шимы, 0 неразрешённых |
+| M5 WinMain | **ГОТОВО** | выполняется главная функция игры (0x580E00 → 0x57ED10 → 0x5B7690): проверка единственного экземпляра (обход процессов через Toolhelp), проверка реестра D3DX `DisablePSGP`, определение CPU, настройки реестра (`Install Dir`, `Language`…), поток мультимедийного таймера (колбэки Windows → lifted-код через `timeSetEvent`, ~257/с), поток файловой системы |
+| M6 игровое окно | **ГОТОВО** | `RegisterClassExA` + `CreateWindowExA("GameFrame", "NFS Underground 2")` + `ShowWindow`; guest-функция WndProc `0x5CCD60` получает сообщения через колбэк-путь native32 |
+| M7 инициализация D3D9 | **ГОТОВО** | `Direct3DCreate9(32)`, `CreateDevice` → `S_OK` (640x480 X8R8G8B8, полноэкранный режим, D24S8) |
+| M8 первый кадр | **ГОТОВО** | `Present` → `S_OK`; 1,320 кадров за один запуск, ~496 вызовов D3D и 14 draw-вызовов на кадр |
+| M9 EA logo / интро | **ГОТОВО** | ролики интро проигрываются (пользователь видит их на экране); из ресурсов-эффектов exe скомпилировано 34 vertex- и 34 pixel-шейдера |
+| M10 главное меню | В ПРОЦЕССЕ | ролики нельзя пропустить: проблема с вводом описана ниже |
+| M11 гараж, M12 заезд | не начато | |
 
-## Resolved: the game asked for Disc 2
+## Решено: игра просила вставить диск 2
 
-- **Where:** `0x005C0D30` (called from `0x005B76B3` in the game's startup at `0x005B7690`) shows `MessageBoxA("Please insert Disc 2", "NFS Underground 2")`; cancelling calls `exit(0)` (`0x0075D5A4`).
-- **Why:** `0x005BF450` walks drive letters and accepts only `GetDriveTypeA == DRIVE_CDROM` holding the game files; a global at `0x0079DC60` that would also accept other drive types is 0 in the file and is never written by any code. The remaining bypass is the existence of a file named `foobar` in the game folder (`0x0057CAC0("foobar")`), a developer switch.
-- **Evidence that this is the game, not the recompilation:** the **original** `SPEED2.EXE` of this installation, started on the same machine, shows the same `#32770 "NFS Underground 2"` dialog after 10 s (oracle run on 2026-10-06; nothing was modified). The recompiled and original binaries agree up to this point.
-- **Resolution (owner's decision):** the owner's installed copy has no disc drive available, and the owner asked to bypass the check. The game's own developer switch is used: an empty file `foobar` was added to GAME_ROOT. Nothing in the game or in the recompilation was patched.
+- **Где:** `0x005C0D30` (вызывается из `0x005B76B3` при старте игры в
+  `0x005B7690`) показывает `MessageBoxA("Please insert Disc 2", "NFS Underground 2")`;
+  отмена вызывает `exit(0)` (`0x0075D5A4`).
+- **Почему:** `0x005BF450` перебирает буквы дисков и принимает только тот, у
+  которого `GetDriveTypeA == DRIVE_CDROM` и на котором лежат файлы игры;
+  глобальная переменная в `0x0079DC60`, которая разрешила бы и другие типы
+  дисков, в файле равна 0 и никаким кодом не записывается. Остающийся
+  обходной путь — наличие файла `foobar` в папке игры (`0x0057CAC0("foobar")`),
+  это переключатель для разработчиков.
+- **Доказательство, что дело в игре, а не в рекомпиляции:** **оригинальный**
+  `SPEED2.EXE` из этой же инсталляции, запущенный на той же машине, показывает
+  тот же диалог `#32770 "NFS Underground 2"` спустя 10 с (эталонный запуск от
+  2026-10-06; ничего не менялось). До этого момента рекомпилированный и
+  оригинальный бинарники ведут себя одинаково.
+- **Решение (по выбору владельца):** у установленной копии владельца нет
+  доступного дисковода, и он попросил обойти проверку. Используется штатный
+  переключатель разработчиков самой игры: в GAME_ROOT добавлен пустой файл
+  `foobar`. Ни игра, ни рекомпиляция патчами не затронуты.
 
-## Current issue: keys do not skip the movies
+## Текущая проблема: клавиши не пропускают ролики
 
-- Mouse: `IDirectInput8::CreateDevice(GUID_SysMouse)`, `FOREGROUND|EXCLUSIVE`; works while the window has focus, `DIERR_INPUTLOST` / `E_ACCESSDENIED` otherwise (expected).
-- Keyboard/pads come from `IDirectInput8::EnumDevicesBySemantics` (DirectInput action mapping): the device is handed to the guest callback `0x5CA660`. `BuildActionMap` succeeds for 4 action formats and fails with `E_INVALIDARG` for 3; `SetActionMap` returns `DI_SETTINGSNOTSAVED`; `Acquire` and `GetDeviceData` then succeed. Whether `GetDeviceData` ever returns events, and what the 3 failing action maps are, is the next thing to measure.
-- `WM_KEYDOWN` reaches the guest WndProc, which only uses it for the debug console (keys 0x23-0x7B), so window messages are not the game's input path.
+- Мышь: `IDirectInput8::CreateDevice(GUID_SysMouse)`, `FOREGROUND|EXCLUSIVE`;
+  работает, пока окно в фокусе, иначе `DIERR_INPUTLOST` / `E_ACCESSDENIED`
+  (ожидаемо).
+- Клавиатура/геймпады идут через `IDirectInput8::EnumDevicesBySemantics`
+  (action mapping DirectInput): устройство передаётся в guest-колбэк
+  `0x5CA660`. `BuildActionMap` успешно отрабатывает для 4 форматов действий
+  и завершается `E_INVALIDARG` для 3; `SetActionMap` возвращает
+  `DI_SETTINGSNOTSAVED`; после этого `Acquire` и `GetDeviceData` проходят
+  успешно. Возвращает ли `GetDeviceData` события вообще и что это за 3
+  неудачные карты действий — предстоит измерить следующим шагом.
+- `WM_KEYDOWN` доходит до guest-функции WndProc, но она использует его
+  только для отладочной консоли (клавиши 0x23-0x7B), так что оконные
+  сообщения — не тот путь, которым идёт игровой ввод.
 
-## Viability (lifter)
+## Жизнеспособность (lifter)
 
-| Metric | Result |
+| Метрика | Результат |
 |---|---|
-| `.text` bytes | 3,676,913 |
-| Functions recovered | 27,742 (incl. 4,599 aliases) |
-| Real code coverage | ≈ 99.9 % (uncovered bytes are padding and pointer tables; ~2.1 KB unexplained) |
-| Lifted functions | 27,742 (1 replaced by a documented override, 1 excluded as data) |
-| `RECOMP_UNIMPL` sites | 2,907: 2,890 3DNow! (unreachable: CPUID reports no 3DNow!), 17 `int` in data/unreachable FDIV-workaround tables |
-| Compile errors | 0 |
-| Link errors | 0 |
-| ICALL / ITAIL sites | 13,271 / 3,126; **0 unresolved at runtime so far** |
-| difftest (lift32 + simd32 vs Unicorn) | 246 / 246 |
+| Байт `.text` | 3,676,913 |
+| Восстановлено функций | 27,742 (включая 4,599 алиасов) |
+| Покрытие реального кода | ≈ 99.9 % (непокрытые байты — выравнивание и таблицы указателей; ~2.1 KB необъяснены) |
+| Функций через lifter | 27,742 (1 заменена задокументированным оверрайдом, 1 исключена как данные) |
+| Мест `RECOMP_UNIMPL` | 2,907: 2,890 — 3DNow! (недостижимо: CPUID сообщает об отсутствии 3DNow!), 17 — `int` в таблицах данных/недостижимого обхода FDIV |
+| Ошибок компиляции | 0 |
+| Ошибок линковки | 0 |
+| Мест ICALL / ITAIL | 13,271 / 3,126; **пока 0 неразрешённых в рантайме** |
+| difftest (lift32 + simd32 против Unicorn) | 246 / 246 |
 
-**Classification: GREEN** for the lifter: complete coverage, everything lifts
-and compiles, differential tests pass, and the recompiled code reproduces the
-original's behaviour as far as it has been run.
+**Классификация: GREEN** для lifter'а: полное покрытие, всё успешно лифтится
+и компилируется, дифференциальные тесты проходят, и рекомпилированный код
+воспроизводит поведение оригинала в тех пределах, в которых его успели
+прогнать.
 
-## Runtime issues found and fixed during bring-up
+## Проблемы рантайма, найденные и исправленные во время bring-up
 
-1. The guest range 0x400000–0x932000 was taken before `main` (first by a 64 MB
-   main-thread stack, then by NLS/locale mappings and heaps). Fix: the host
-   relaunches itself suspended and reserves the range in the child with
-   `VirtualAllocEx` before the child's loader runs; the game runs on its own
-   256 MB-stack thread.
-2. lift32 emitted no `RECOMP_BACKEDGE`, so a lifted spin-wait could starve other
-   guest threads under the machine lock (pcrecomp patch 0005).
-3. The Cyrix probe at 0x6F5FC5 depends on DIV's undefined flags → documented
-   override returning "not Cyrix".
+1. Guest-диапазон 0x400000–0x932000 оказывался занят ещё до `main` (сначала
+   64-МБ стеком главного потока, затем маппингами NLS/локали и кучами).
+   Исправление: хост перезапускает себя в приостановленном состоянии и
+   резервирует диапазон в дочернем процессе через `VirtualAllocEx` до того,
+   как отработает загрузчик дочернего процесса; игра выполняется на
+   отдельном потоке со стеком 256 МБ.
+2. lift32 не генерировал `RECOMP_BACKEDGE`, из-за чего lifted spin-wait мог
+   заморить голодом другие guest-потоки под локом машины (патч pcrecomp
+   0005).
+3. Проверка на Cyrix в 0x6F5FC5 зависит от неопределённых флагов DIV →
+   задокументированный оверрайд, возвращающий «не Cyrix».
 
-## Known open issues
+## Известные открытые проблемы
 
-- `LoadIconA(0x400000, …)` returns NULL: Windows does not know the manually
-  mapped guest module, so resource APIs on it need a shim (icon, and the 23
-  RT_RCDATA resources).
-- C++ exceptions thrown by guest code reach the native `RaiseException`, and
-  Windows will not find the guest's handlers (they live in the simulated TIB).
-  Not hit yet.
+- `LoadIconA(0x400000, …)` возвращает NULL: Windows не знает о вручную
+  замапленном guest-модуле, поэтому API ресурсов для него нуждаются в шиме
+  (иконка и 23 ресурса RT_RCDATA).
+- Исключения C++, выброшенные guest-кодом, доходят до нативного
+  `RaiseException`, а Windows не найдёт guest-обработчики (они живут в
+  симулированном TIB). Пока не встречалось на практике.
 
-## Next steps
+## Следующие шаги
 
-1. Pass the disc check legitimately (owner's disc), then reach `CreateWindowExA` (M6).
-2. Shim `LoadIconA`/`FindResourceA`/`LoadResource`/`SizeofResource`/`LockResource` for the guest HMODULE.
-3. D3D9 trace (`D3D_TRACE=summary|full`) around `Direct3DCreate9` and the device vtable → `docs/D3D9_USAGE.md`.
+1. Пройти проверку диска легитимно (диском владельца), затем дойти до
+   `CreateWindowExA` (M6).
+2. Сделать шим для
+   `LoadIconA`/`FindResourceA`/`LoadResource`/`SizeofResource`/`LockResource`
+   применительно к guest HMODULE.
+3. Трассировка D3D9 (`D3D_TRACE=summary|full`) вокруг `Direct3DCreate9` и
+   vtable устройства → `docs/D3D9_USAGE.md`.

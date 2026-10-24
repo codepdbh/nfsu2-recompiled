@@ -1,77 +1,75 @@
-# Android runtime 0.5.0 — 2026-10-08
+# Рантайм Android 0.5.0 — 2026-10-08
 
-This report supersedes the startup boundary in
-[the 0.4.0 input/audio report](ANDROID_INPUT_AUDIO_TEST.md).
-The new APK continues the original startup movies on the physical Samsung
-SM-S938B / Adreno 830. It is still a development build; complete menus,
-races and game save/load are not certified.
+Этот отчёт заменяет собой границу запуска из
+[отчёта 0.4.0 о вводе/аудио](ANDROID_INPUT_AUDIO_TEST.md).
+Новый APK продолжает исходные стартовые ролики на физическом Samsung SM-S938B / Adreno 830.
+Это всё ещё сборка для разработки: полные меню, гонки и сохранение/загрузка игры не
+подтверждены (не сертифицированы).
 
-## Implemented
+## Реализовано
 
-- `VirtualProtect` updates committed guest pages, reports the previous
-  protection and makes host pages read-only, writable or inaccessible.
-  Guest execute permissions remain metadata: x86 bytes are never executed
-  as ARM64 instructions. `IsBadWritePtr` now checks write permissions.
-  Recommitting a heap block preserves protections of existing shared pages.
-  Guard/cache modifiers, virtual reservations and decommit remain incomplete.
-- `SHGetFolderPathA` redirects LocalAppData to
-  `C:\nfsu2\AppData\Local`, mapped to
-  `/storage/emulated/0/nfsu2/AppData/Local`. The original game creates its
-  `NFS Underground 2` subfolder there. Roaming AppData and Documents have
-  separate contained mappings. Unsupported folder IDs return an error.
-- `CreateDirectoryA`, `GetFullPathNameA` including its file-part pointer,
-  `FindFirstFileA`, `FindNextFileA` and `FindClose`. Searches are
-  case-insensitive, support basic `*`/`?` patterns and `*.*`, return the
-  32-bit ANSI find-data layout and signal end-of-search/invalid handles.
-  DOS wildcard corner cases and short 8.3 names are not implemented.
-  Unix ctime substitutes for creation time; access/write timestamps use stat.
-- Synchronous `WriteFile`, `SetEndOfFile` and `FlushFileBuffers`, backed
-  by real file writes, truncation and fsync. Overlapped I/O stays an explicit
-  unsupported boundary. Full Windows sharing/security semantics remain open.
-- The bring-up time limit is now 90 seconds so the original movies can
-  advance beyond the old 30-second smoke-test cutoff.
+- `VirtualProtect` обновляет закоммиченные гостевые страницы, возвращает предыдущую защиту
+  и делает хостовые страницы доступными только для чтения, для записи или недоступными.
+  Права на выполнение у гостя остаются метаданными: байты x86 никогда не выполняются как
+  инструкции ARM64. `IsBadWritePtr` теперь проверяет права на запись. Повторный коммит
+  блока кучи сохраняет защиту уже существующих общих страниц. Модификаторы guard/cache,
+  виртуальные резервирования и decommit остаются незавершёнными.
+- `SHGetFolderPathA` перенаправляет LocalAppData в
+  `C:\nfsu2\AppData\Local`, что отображается на
+  `/storage/emulated/0/nfsu2/AppData/Local`. Исходная игра создаёт там свою подпапку
+  `NFS Underground 2`. Roaming AppData и Documents имеют отдельные изолированные маппинги.
+  Неподдерживаемые идентификаторы папок возвращают ошибку.
+- `CreateDirectoryA`, `GetFullPathNameA`, включая указатель на файловую часть пути,
+  `FindFirstFileA`, `FindNextFileA` и `FindClose`. Поиск регистронезависимый, поддерживает
+  базовые шаблоны `*`/`?` и `*.*`, возвращает 32-битную структуру find-data в кодировке ANSI
+  и сигнализирует о конце поиска/невалидных хендлах. Граничные случаи DOS-шаблонов и короткие
+  8.3-имена не реализованы. Unix ctime используется вместо времени создания; время доступа/записи
+  берётся из stat.
+- Синхронные `WriteFile`, `SetEndOfFile` и `FlushFileBuffers`, реализованные через реальную
+  запись файлов, усечение и fsync. Overlapped I/O остаётся явно неподдерживаемой границей.
+  Полная семантика Windows-доступа и безопасности остаётся открытым вопросом.
+- Лимит времени на bring-up теперь составляет 90 секунд, чтобы исходные ролики могли пройти
+  дальше старого предела smoke-теста в 30 секунд.
 
-All mapped paths remain inside the user's `nfsu2` directory. Traversal and
-symlink escapes are rejected. Game data and generated game code are not
-included in Git.
+Все замапленные пути остаются внутри пользовательской директории `nfsu2`. Обходы пути и
+выходы через симлинки отклоняются. Игровые данные и сгенерированный код игры не включены в Git.
 
-## Checks
+## Проверки
 
-- ARM64 `tests/android_memory` passed on the phone: unaligned page crossings,
-  previous flags, read-only/read-write/no-access transitions, recommit
-  preservation, untouched data, invalid flags, wrapping addresses and
-  ranges that include uncommitted pages. Device page size: 4096 bytes.
-- ARM64 `tests/android_files` passed on the phone in an isolated temporary
-  directory: folder mappings, case-insensitive names, wildcard enumeration,
-  find-data offsets, directory creation, full-path sizing and file-part
-  pointers, write/seek/truncate/flush persistence and path escape rejection.
-  Fixtures clean up their own temporary files.
-- `assembleDebug` completed successfully and the version 5 APK was installed
-  on the connected device. The selected guest language remains Spanish.
-- The real guest passed the former `VirtualProtect`, `SHGetFolderPathA`,
-  directory creation and full-path boundaries. It opened `ealogo.vp6`,
-  `THX_logo.vp6` and `PSA.vp6`; a device screenshot captured Rachel's
-  original intro frame through the D3D9/Vulkan bridge.
-- The extended 90-second run loaded `FMVOpening.vp6` and rendered its original
-  car sequence. It reached the bring-up deadline at guest `0x0043bdf0` while
-  still in the intro; this is not evidence of successful menu initialization.
+- ARM64 `tests/android_memory` прошёл на телефоне: пересечения невыровненных страниц,
+  предыдущие флаги, переходы между read-only/read-write/no-access, сохранение прав при
+  повторном коммите, нетронутые данные, невалидные флаги, переполняющиеся адреса и
+  диапазоны, включающие незакоммиченные страницы. Размер страницы устройства: 4096 байт.
+- ARM64 `tests/android_files` прошёл на телефоне в изолированной временной директории:
+  маппинги папок, регистронезависимые имена, перечисление по шаблонам, смещения find-data,
+  создание директорий, вычисление размера полного пути и указателей на файловую часть,
+  сохранение при записи/перемещении/усечении/сбросе буфера и отклонение выходов за пределы
+  пути. Фикстуры сами убирают за собой временные файлы.
+- `assembleDebug` успешно завершился, и APK пятой версии был установлен на подключённое
+  устройство. Выбранный гостевой язык — испанский.
+- Реальный гость прошёл прежние границы `VirtualProtect`, `SHGetFolderPathA`, создания
+  директорий и полного пути. Он открыл `ealogo.vp6`, `THX_logo.vp6` и `PSA.vp6`; скриншот
+  с устройства зафиксировал исходный интро-кадр Рэйчел через мост D3D9/Vulkan.
+- Расширенный 90-секундный прогон загрузил `FMVOpening.vp6` и отрисовал исходную
+  последовательность с машиной. Он достиг дедлайна bring-up на гостевом адресе `0x0043bdf0`,
+  всё ещё находясь в интро; это не свидетельствует об успешной инициализации меню.
 
-Both test projects build with the Android NDK CMake toolchain, ABI
-`arm64-v8a`, platform `android-26` and `ANDROID_STL=c++_static`. Push the
-executables to `/data/local/tmp`, run `chmod 755` after each push, then run
-them through `adb shell`. The filesystem fixture currently uses
-`/data/local/tmp` and is intended to run as the adb shell user.
+Оба тестовых проекта собираются через NDK CMake toolchain, ABI `arm64-v8a`, платформа
+`android-26` и `ANDROID_STL=c++_static`. Сначала запушьте исполняемые файлы в
+`/data/local/tmp`, после каждого пуша выполните `chmod 755`, затем запустите их через
+`adb shell`. Фикстура файловой системы сейчас использует `/data/local/tmp` и рассчитана на
+запуск от пользователя adb shell.
 
-Local evidence is in the parent workspace's
+Локальные доказательства лежат в родительском рабочем пространстве:
 `work/android-profile-device-test.log`,
-`work/android-profile-device-test.png` and `work/android-profile-build.log`.
-The locally generated APK is `build/android/NFSU2-AndroidEvolved-runtime.apk`.
+`work/android-profile-device-test.png` и `work/android-profile-build.log`.
+Локально собранный APK: `build/android/NFSU2-AndroidEvolved-runtime.apk`.
 
-Vulkan instance version remains 1.1. The tested driver advertises 1.3;
-compatibility on a Vulkan-1.1-only GPU is still unverified. Lifecycle
-recovery, complete input/audio coverage and performance remain unfinished.
+Версия экземпляра Vulkan по-прежнему 1.1. Тестируемый драйвер заявляет 1.3;
+совместимость с GPU, поддерживающим только Vulkan 1.1, пока не проверена. Восстановление
+жизненного цикла, полное покрытие ввода/аудио и производительность остаются незавершёнными.
 
-API contracts used:
+Используемые API-контракты:
 [VirtualProtect](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualprotect),
 [SHGetFolderPathA](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetfolderpatha),
 [FindFirstFileA](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilea),

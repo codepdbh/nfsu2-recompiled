@@ -1,79 +1,90 @@
-# Audio and frame pacing follow-up (2026-10-15)
+# Доработка звука и тайминга кадров (2026-10-15)
 
-Tester reports affect all three PC ports, including Dimensity 9300/8400 and
-Snapdragon 675. Those models have not been tested locally; the connected
-Redmi Note 8 is a separate device. Do not treat these changes as a confirmed
-fix for every reported audio or frame-rate problem.
+Отчёты тестировщиков касаются всех трёх PC-портов, включая Dimensity 9300/8400 и
+Snapdragon 675. Эти модели локально не тестировались; подключённый
+Redmi Note 8 — отдельное устройство. Не считайте эти изменения подтверждённым
+фиксом для каждой заявленной проблемы со звуком или частотой кадров.
 
-The frame limiter previously slept while owning the serialized guest machine.
-It now saves the current thread context, releases the machine until its frame
-deadline, then reacquires it and restores the context. Guest audio, streaming
-and network workers can progress during that idle time. The startup scheduler
-regression exercises timed handovers alongside ordinary yields and checks
-integer, FS, x87, XMM, TLS and last-error isolation.
+Раньше ограничитель кадров засыпал, удерживая сериализованную гостевую машину.
+Теперь он сохраняет текущий контекст потока, освобождает машину до наступления
+дедлайна кадра, затем снова захватывает её и восстанавливает контекст. Гостевые
+аудио-, стриминговые и сетевые воркеры могут прогрессировать в это время простоя.
+Регрессионный тест планировщика на старте прогоняет таймированные передачи
+управления вместе с обычными yield'ами и проверяет изоляцию целочисленных,
+FS, x87, XMM, TLS регистров и last-error.
 
-AAudio requests low-latency shared output at the device-selected sample rate.
-The initial buffer is two hardware bursts. After observed output underruns,
-the guest thread grows the buffer one burst at a time, up to eight bursts and
-never beyond the stream capacity. Devices may decline the low-latency request.
-Audio health logs report actual performance mode, rate, burst, buffer size,
-underrun count and peak callback duration every 120 successful game Presents.
-No logging or buffer resizing was added inside the audio callback.
+AAudio запрашивает low-latency shared-вывод на частоте дискретизации, выбранной
+устройством. Начальный буфер — два аппаратных burst'а. После замеченных
+underrun'ов на выводе гостевой поток увеличивает буфер по одному burst'у за раз,
+до восьми burst'ов и никогда не больше ёмкости потока. Устройства могут
+отклонить запрос low-latency. Логи здоровья аудио каждые 120 успешных Present
+игры сообщают фактический режим производительности, частоту, размер burst'а,
+размер буфера, счётчик underrun'ов и пиковую длительность callback'а.
+Логирование и изменение размера буфера внутри самого аудио-callback'а не
+добавлялись.
 
-The mixer still uses a mutex while rendering and publishing PCM. Callback
-starvation, stale guest streaming data and graphics stalls remain distinct
-possible causes; the new diagnostics help distinguish them. Stream recovery
-following audio-device disconnects is not implemented by this change.
+Микшер по-прежнему использует мьютекс при рендеринге и публикации PCM.
+Голодание callback'а, устаревшие гостевые данные стриминга и подвисания
+графики остаются разными возможными причинами; новая диагностика помогает их
+различать. Восстановление потока после отключения аудио-устройства этим
+изменением не реализовано.
 
-Build validation is recorded in work/audio-pacing-build.log (ignored).
-Physical testing of this final audio revision on the affected tester devices
-is pending. No release assets are replaced by this source commit.
+Валидация сборки зафиксирована в work/audio-pacing-build.log (игнорируется
+гитом). Физическое тестирование этой финальной ревизии звука на устройствах
+затронутых тестировщиков ещё предстоит провести. Этот коммит с исходниками не
+заменяет никакие релизные сборки.
 
-AAudio buffer tuning reference:
+Справочник по настройке буфера AAudio:
 https://developer.android.com/ndk/guides/audio/aaudio/aaudio
 
 
-## Resampling and CPU follow-up
+## Доработка ресемплинга и нагрузки на CPU
 
-The user's remaining audio report is static-like background noise during
-**gameplay**, rather than delayed or interrupted playback. A native PCM ring
-snapshot from MW on the Redmi was stereo, signed 16-bit, 22050 Hz. AAudio
-selected 48000 Hz. This is a real rate conversion, not a changed playback speed.
+Оставшаяся жалоба пользователя на звук — шум, похожий на статику, на фоне во
+время **геймплея**, а не задержки или прерывания воспроизведения. Нативный
+снимок PCM-кольца из MW на Redmi был стерео, 16-бит signed, 22050 Гц. AAudio
+выбрал 48000 Гц. Это реальное преобразование частоты дискретизации, а не
+изменение скорости воспроизведения.
 
-Upsampling now uses a normalized 16-tap Blackman-windowed sinc with 256 phases
-and interpolation between phases. Tables are prepared before stream playback;
-the callback does not allocate memory or calculate trigonometric functions.
-Equal-rate playback and downsampling retain the previous path. This change
-suppresses spectral images from the former two-point linear upsampler; it is
-not a noise gate and does not remove intentional game ambience or noise already
-present in decoded source PCM. Subjective confirmation of the reported static
-remains pending. Filter overshoot and source mixing can still reach the output
-clamp; clipping counters report this instead of concealing it.
+Апсемплинг теперь использует нормализованный 16-tap sinc с окном Блэкмана,
+256 фаз и интерполяцией между фазами. Таблицы готовятся до начала
+воспроизведения потока; callback не выделяет память и не вычисляет
+тригонометрические функции. Воспроизведение с равными частотами и даунсемплинг
+сохраняют прежний путь. Это изменение подавляет спектральные образы от
+прежнего двухточечного линейного апсемплера; это не noise gate, оно не убирает
+намеренную игровую атмосферу или шум, уже присутствующий в декодированном
+исходном PCM. Субъективное подтверждение заявленной статики пока не получено.
+Перерегулирование фильтра и микширование источников всё ещё могут достигать
+клампа на выходе; счётчики клиппинга это фиксируют, а не скрывают.
 
-The deterministic PCM test measures a 6 kHz source tone at 22050 Hz converted
-to 48000 Hz: its unwanted 16.05 kHz image is about 68 dB lower than with the
-previous interpolator, while the source amplitude remains 0.25. It also checks
-unsigned 8-bit silence through upsampling, signed stereo, mute, loop boundaries,
-fractional pitch and clipping detection. These are synthetic signal results,
-not a measurement of the user's audible background noise.
+Детерминированный PCM-тест измеряет тон 6 кГц из источника на 22050 Гц,
+преобразованный в 48000 Гц: его нежелательный образ на 16.05 кГц примерно на
+68 дБ ниже, чем у предыдущего интерполятора, при этом амплитуда источника
+остаётся 0.25. Также проверяются беззнаковая 8-битная тишина при апсемплинге,
+знаковое стерео, mute, границы луп-точек, дробный питч и детекция клиппинга.
+Это результаты по синтетическим сигналам, а не измерение слышимого
+пользователем фонового шума.
 
-DirectSound GetCaps previously returned 0x147, omitting primary 16-bit and
-secondary stereo/16-bit formats. It now reports the supported PCM formats and
-continuous rate range with 0xF1F, matching a Windows DirectSound format-capability
-probe. Hardware voice counts remain zero because the adapter mixes in software.
-A startup regression calls the guest COM methods, checks the 96-byte output
-and stack ABI, then releases its temporary device.
+DirectSound GetCaps раньше возвращал 0x147, не указывая основные 16-бит и
+вторичные стерео/16-бит форматы. Теперь он сообщает поддерживаемые PCM-форматы
+и непрерывный диапазон частот через 0xF1F, что соответствует проверке
+возможностей формата DirectSound в Windows. Количество аппаратных голосов
+по-прежнему равно нулю, поскольку адаптер микширует программно. Регрессионный
+тест при старте вызывает гостевые COM-методы, проверяет 96-байтный вывод и ABI
+стека, затем освобождает временное устройство.
 
-FramePacer drops missed deadlines rather than accumulating lateness and
-periodically adding another full frame of sleep. Its deterministic clock test
-covers 8000 fast/overloaded frames at 30/60/90/120 FPS, pauses, uncapped mode and
-cap changes. The scheduler also avoids save/unlock/relock handovers when no
-other guest thread has queued for the machine; queued work is still checked
-on the existing 500-microsecond scheduling interval. Native COM/import stubs
-skip the lifted-function hash table, with a startup guard against overlapping
-lifted modules. No controlled FPS percentage is claimed for these CPU changes.
+FramePacer теперь отбрасывает пропущенные дедлайны вместо накопления
+отставания и периодической добавки ещё одного полного кадра сна. Его
+детерминированный тест часов покрывает 8000 быстрых/перегруженных кадров на
+30/60/90/120 FPS, паузы, режим без ограничения и смену лимита. Планировщик
+также избегает передач управления save/unlock/relock, когда ни один другой
+гостевой поток не стоит в очереди на машину; поставленная в очередь работа
+по-прежнему проверяется на существующем интервале планирования в 500
+микросекунд. Нативные заглушки COM/импортов пропускают хэш-таблицу
+lifted-функций, со стартовой защитой от пересечения lifted-модулей. Никакой
+конкретный прирост FPS в процентах для этих изменений CPU не заявляется.
 
-Run the standalone tests from a Visual Studio developer prompt:
+Запускайте автономные тесты из Developer Prompt Visual Studio:
 
 ```
 cl /EHsc /std:c++17 /O2 tests/audio_mixer.cpp /Fework/audio_mixer.exe /Fowork/audio_mixer.obj
@@ -82,45 +93,50 @@ cl /EHsc /std:c++17 /O2 tests/frame_pacer.cpp /Fework/frame_pacer.exe /Fowork/fr
 work\frame_pacer.exe
 ```
 
-References: [DirectSound DSCAPS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416821(v=vs.85)),
+Источники: [DirectSound DSCAPS](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416821(v=vs.85)),
 [Julius O. Smith, windowed sinc interpolation](https://www.dsprelated.com/freebooks/pasp/Windowed_Sinc_Interpolation.html),
 [linear interpolation and spectral imaging](https://www.dsprelated.com/freebooks/pasp/Linear_Interpolation_Resampling.html).
 
 
-## Persistent pipeline states and release validation
+## Персистентные состояния пайплайна и валидация релиза
 
-Android now places DXVK's state cache in the app-private cache/dxvk directory
-before creating the device. Directory creation failure leaves caching disabled
-without aborting startup. The bridge no longer unconditionally disables the
-cache. This records shader/state combinations for DXVK's background pipeline
-compilation on later starts; it is not a promise that every first-use shader
-stall disappears, and it is not a persistent Vulkan driver-binary cache.
+Android теперь размещает кэш состояний DXVK в приватной для приложения
+директории cache/dxvk до создания устройства. Сбой создания директории
+оставляет кэширование выключенным, не прерывая запуск. Мост больше не
+отключает кэш безусловно. Это фиксирует комбинации шейдеров/состояний для
+фоновой компиляции пайплайнов DXVK при последующих запусках; это не гарантия,
+что любое зависание при первом использовании шейдера исчезнет, и не
+персистентный кэш бинарников Vulkan-драйвера.
 
-The MW ARM64 build reaches a quick race on the Redmi Note 8 with the CPU and
-cache changes. A bounded sample at 780x360 and a 30 FPS cap showed roughly
-27-30 FPS in gameplay, with AAudio reporting no output underruns in the captured
-session. Source PCM is 22050 Hz and output is 48000 Hz. The user confirmed that
-an intermediate audio/pacing build felt more fluid. Subjective static-noise
-confirmation for the final filter is still pending.
+Сборка MW под ARM64 доходит до быстрой гонки на Redmi Note 8 с изменениями CPU
+и кэша. Ограниченная выборка при 780x360 и лимите 30 FPS показала примерно
+27-30 FPS в геймплее, при этом AAudio не фиксировал underrun'ов на выводе в
+записанной сессии. Исходный PCM — 22050 Гц, вывод — 48000 Гц. Пользователь
+подтвердил, что промежуточная сборка с изменениями звука/тайминга ощущалась
+более плавной. Субъективное подтверждение финального фильтра по статическому
+шуму пока не получено.
 
-MW also caches the validated Device handle for ordinary D3D methods, avoiding
-repeated registry lookups. QueryInterface/AddRef/Release keep the normal path;
-retiring that handle or shutting down invalidates the cache. This bridge cache
-is MW-only for now. Both common standalone tests pass on MSVC; all three
-projects build ARM64 and ARMv7 releases. Physical ARMv7 testing is pending:
-the Redmi was disconnected during release preparation and the connected S25
-supports only ARM64. APK ABI, signatures and versions are checked separately.
-Dimensity 9300/8400 and Snapdragon 675 testing remains outstanding.
+MW также кэширует провалидированный хэндл Device для обычных методов D3D,
+избегая повторных обращений к реестру. QueryInterface/AddRef/Release
+сохраняют обычный путь; отзыв этого хэндла или завершение работы делает кэш
+недействительным. Этот кэш моста пока специфичен только для MW. Оба общих
+автономных теста проходят на MSVC; все три проекта собирают релизы под ARM64 и
+ARMv7. Физическое тестирование ARMv7 пока предстоит: Redmi был отключён во
+время подготовки релиза, а подключённый S25 поддерживает только ARM64. ABI
+APK, подписи и версии проверяются отдельно. Тестирование на Dimensity
+9300/8400 и Snapdragon 675 остаётся незавершённым.
 
 
-The final release set contains one arm64-v8a and one armeabi-v7a APK per game.
-All six APK signatures match the previous releases' certificate; manifest ABI,
-version and every native ELF class/machine were inspected. ARM64 release APKs
-install over the S25 apps without clearing game data. The user confirmed that
-the updated apps work. The S25 cannot install ARMv7 APKs, so those downloads
-remain physically untested in this session. They are not universal APKs.
+Финальный набор релиза содержит один arm64-v8a и один armeabi-v7a APK на
+каждую игру. Все шесть подписей APK совпадают с сертификатом предыдущих
+релизов; ABI манифеста, версия и каждый нативный ELF-класс/архитектура были
+проверены. ARM64-релизные APK устанавливаются поверх приложений на S25 без
+очистки игровых данных. Пользователь подтвердил, что обновлённые приложения
+работают. S25 не может установить ARMv7 APK, поэтому эти сборки остаются
+физически непротестированными в этой сессии. Это не универсальные APK.
 
-On the Redmi, MW's DXVK v10 state-cache file contained 39 entries whose SHA-1
-checksums were independently verified. This verifies persisted cache contents,
-not a quantified warm-start FPS gain. A complete race, long-session stability
-and validation on the reported Dimensity/Snapdragon 675 devices remain pending.
+На Redmi файл кэша состояний DXVK v10 для MW содержал 39 записей, чьи SHA-1
+контрольные суммы были независимо проверены. Это подтверждает содержимое
+сохранённого кэша, а не количественный прирост FPS при тёплом старте. Полная
+гонка, стабильность долгой сессии и валидация на заявленных устройствах
+Dimensity/Snapdragon 675 остаются незавершёнными.

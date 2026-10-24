@@ -48,7 +48,7 @@ final class Diagnostics {
                 int reason = exit.getReason();
                 if (reason == ApplicationExitInfo.REASON_CRASH || reason == ApplicationExitInfo.REASON_CRASH_NATIVE
                         || reason == ApplicationExitInfo.REASON_ANR) {
-                    return (reason == ApplicationExitInfo.REASON_ANR ? "The game stopped responding" : "The game closed unexpectedly")
+                    return (reason == ApplicationExitInfo.REASON_ANR ? "Игра перестала отвечать" : "Игра неожиданно закрылась")
                             + (exit.getDescription() == null ? "" : " (" + exit.getDescription() + ")");
                 }
             }
@@ -72,7 +72,7 @@ final class Diagnostics {
 
     static File createReport(Context context) throws Exception {
         File directory = new File(context.getCacheDir(), "reports");
-        if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Could not create report.");
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Не удалось создать отчёт.");
         File[] old = directory.listFiles();
         if (old != null) for (File file : old)
             if (file.isFile() && file.lastModified() < System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)) file.delete();
@@ -156,10 +156,10 @@ final class Diagnostics {
         values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/NFSU2");
         android.content.ContentResolver resolver = context.getContentResolver();
         Uri target = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-        if (target == null) throw new IOException("Could not create file in Downloads.");
+        if (target == null) throw new IOException("Не удалось создать файл в Downloads.");
         try (InputStream input = new java.io.FileInputStream(report);
              java.io.OutputStream output = resolver.openOutputStream(target, "w")) {
-            if (output == null) throw new IOException("Could not write to Downloads.");
+            if (output == null) throw new IOException("Не удалось записать файл в Downloads.");
             byte[] buffer = new byte[65536];
             for (int n; (n = input.read(buffer)) != -1;) output.write(buffer, 0, n);
         } catch (IOException error) {
