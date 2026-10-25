@@ -13,6 +13,11 @@ void nfs_widescreen_set_resolution(unsigned width, unsigned height);
 int nfs_widescreen_hud_entries(void);
 /* Vertical offset (480-line HUD units, negative = up) added to the minimap. */
 void nfs_widescreen_set_minimap_offset(float dy);
+/* "Original 4:3, minimap moved" mode: independent of nfs_widescreen_init/the
+ * HUD correction above (no .dat needed). Nudges only the minimap away from
+ * the touch controls' steering/shift buttons; everything else in the 4:3
+ * frame -- speedometer, FOV, geometry -- stays exactly as the game draws it. */
+void nfs_widescreen_set_minimap_relocate(int enabled);
 /* Game frame pacing (the game caps itself at 60): fps >= 30 replaces its 1/60 s
  * frame time; 0 keeps the original. apply() re-asserts it once per frame,
  * since the game re-sets 1/60 on mode changes. */

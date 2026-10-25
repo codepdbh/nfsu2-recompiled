@@ -84,6 +84,38 @@ static void adjust_mem_pair(uint32_t vx, uint32_t vy) {
     wrf(vx, x); wrf(vy, y);
 }
 
+/* Minimap-only nudge for original 4:3 (Widescreen = off, no HUD/FOV
+ * correction at all): the touch controls' steering/shift buttons sit over the
+ * minimap's stock bottom-left corner, so move just the minimap toward the
+ * screen's left-center, clear of them. Everything else (speedometer, FOV,
+ * geometry) stays exactly where the game draws it.
+ * Reuses the mod's fixed minimap anchors (see is_minimap) directly, so it
+ * needs no WidescreenFix.dat. The offsets are in the game's own ~640-wide HUD
+ * space (same units as the other hooks above) and are a first guess pending
+ * on-device tuning; override with NFSU2_MINIMAP_RELOCATE_DX/DY meanwhile. */
+static float s_minimap_relocate_dx = -90.0f, s_minimap_relocate_dy = -40.0f;
+static int s_minimap_relocate_env_read;
+static int s_minimap_relocate_mode;   /* set by nfs_widescreen_set_minimap_relocate */
+void nfs_widescreen_set_minimap_relocate(int enabled) { s_minimap_relocate_mode = enabled; }
+static void minimap_relocate_env(void) {
+    const char* dx = getenv("NFSU2_MINIMAP_RELOCATE_DX");
+    const char* dy = getenv("NFSU2_MINIMAP_RELOCATE_DY");
+    if (dx) s_minimap_relocate_dx = (float)atof(dx);
+    if (dy) s_minimap_relocate_dy = (float)atof(dy);
+    s_minimap_relocate_env_read = 1;
+}
+static void relocate_minimap_original(float* x, float* y) {
+    int ix = (int)floorf(*x), iy = (int)floorf(*y);
+    if (!((ix == -223 && (iy == 70 || iy == 71 || iy == 142 || iy == 143)) || (ix == -143 && iy == 196))) return;
+    if (!s_minimap_relocate_env_read) minimap_relocate_env();
+    *x += s_minimap_relocate_dx; *y += s_minimap_relocate_dy;
+}
+static void relocate_mem_pair_minimap_only(uint32_t vx, uint32_t vy) {
+    float x = rdf(vx), y = rdf(vy);
+    relocate_minimap_original(&x, &y);
+    wrf(vx, x); wrf(vy, y);
+}
+
 /* Hook sites, in config/hooks*.txt order. The lifted code comes from one
  * SPEED2.EXE build, chosen at lift and compile time with NFSU2_EXE_BUILD:
  * the documented build (default, README "Tested Game Build"), f4bb0d99
@@ -159,7 +191,12 @@ static void set_esp_float(uint32_t offset, float value) { wrf(g_esp + offset, va
 void recomp_hook(uint32_t va) {
     int site = 0;
     while (site < SITE_COUNT && k_sites[site] != va) ++site;
-    if (!s_enabled && site != FRAME_TIME) return;
+    /* Outside Widescreen correction, only the FPS-pacing hook and, in "4:3,
+     * minimap moved" mode, the minimap-only nudge (HUD_HOOK/BLIPS_HOOK, see
+     * relocate_minimap_original) still run; every other site leaves the
+     * game's original 4:3 geometry untouched. */
+    if (!s_enabled && site != FRAME_TIME
+        && !(s_minimap_relocate_mode && (site == HUD_HOOK || site == BLIPS_HOOK))) return;
     { static int trace = -1; static uint32_t seen[SITE_COUNT]; static int count;
       if (trace < 0) trace = getenv("NFSU2_WS_TRACE") != NULL;   /* first hit of each site */
       if (trace) { int k; for (k = 0; k < count && seen[k] != va; ++k) ;
@@ -189,9 +226,16 @@ void recomp_hook(uint32_t va) {
     case RADAR_H44: set_esp_float(0x44, s_height * 2.0f); break;
     case RADAR_H54: set_esp_float(0x54, s_height * 2.0f); break;
     /* HudHook: the element position just stored from ecx/edx. */
-    case HUD_HOOK: adjust_mem_pair(g_esp + 0x60, g_esp + 0x64); break;
+    case HUD_HOOK:
+        if (s_enabled) adjust_mem_pair(g_esp + 0x60, g_esp + 0x64);
+        else if (s_minimap_relocate_mode) relocate_mem_pair_minimap_only(g_esp + 0x60, g_esp + 0x64);
+        break;
     /* BlipsHook: radar blips, before `mov [edx], ecx`. */
-    case BLIPS_HOOK: adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20); g_ecx = MEM32(g_ebx + 0x1C); break;
+    case BLIPS_HOOK:
+        if (s_enabled) adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20);
+        else if (s_minimap_relocate_mode) relocate_mem_pair_minimap_only(g_ebx + 0x1C, g_ebx + 0x20);
+        g_ecx = MEM32(g_ebx + 0x1C);
+        break;
     /* HudHook2: ecx = adjusted X of [esi+1C]/[esi+20]. */
     case HUD_HOOK2: {
         float x, y; uint32_t v = g_ecx; memcpy(&x, &v, 4); y = rdf(g_esi + 0x20);

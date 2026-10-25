@@ -119,6 +119,7 @@
     <string name="option_widescreen_title">Widescreen</string>
     <string name="option_widescreen_on">Corrected HUD and camera</string>
     <string name="option_widescreen_off">Original 4:3 stretched</string>
+    <string name="option_widescreen_off_minimap">Original 4:3, minimap moved</string>
     <string name="option_minimap_title">Minimap</string>
     <string name="option_minimap_top">Top left</string>
     <string name="option_minimap_bottom">Bottom left (original)</string>

@@ -119,6 +119,7 @@
     <string name="option_widescreen_title">Широкоэкранный режим</string>
     <string name="option_widescreen_on">Исправленные HUD и камера</string>
     <string name="option_widescreen_off">Оригинальный 4:3 растянут</string>
+    <string name="option_widescreen_off_minimap">Оригинальный 4:3, миникарта сдвинута</string>
     <string name="option_minimap_title">Мини-карта</string>
     <string name="option_minimap_top">Слева сверху</string>
     <string name="option_minimap_bottom">Слева снизу (оригинал)</string>

@@ -119,6 +119,7 @@
     <string name="option_widescreen_title">Pantalla panorámica</string>
     <string name="option_widescreen_on">HUD y cámara corregidos</string>
     <string name="option_widescreen_off">Original 4:3 estirado</string>
+    <string name="option_widescreen_off_minimap">Original 4:3, minimapa movido</string>
     <string name="option_minimap_title">Minimapa</string>
     <string name="option_minimap_top">Arriba a la izquierda</string>
     <string name="option_minimap_bottom">Abajo a la izquierda (original)</string>
