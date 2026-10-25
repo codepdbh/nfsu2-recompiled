@@ -36,7 +36,7 @@ static const int s_disable_cutscene_borders = 1;
 static float s_minimap_dy = 0.0f;
 /* Game frame time for FPSLimit (0 = the game's own 1/60 s). */
 static float s_frame_time = 0.0f;
-/* FOV multipliers chosen per view at 0x5C7F74 and applied at its three
+/* FOV multipliers chosen per view at 0x5C7F64 and applied at its three
  * reads of the 1.0/0.5/1.0 constants (the mod repoints those operands). */
 static double s_fov_scale[3] = {1.0, 1.0, 1.0};
 
@@ -86,12 +86,15 @@ static void adjust_mem_pair(uint32_t vx, uint32_t vy) {
 
 /* Hook sites, in config/hooks*.txt order. The lifted code comes from one
  * SPEED2.EXE build, chosen at lift and compile time with NFSU2_EXE_BUILD:
- * the documented build (default, README "Tested Game Build") or f4bb0d99
- * (R36S port, PR #683), whose code sits at other addresses. */
+ * the documented build (default, README "Tested Game Build"), f4bb0d99
+ * (R36S port, PR #683) or 90d73842 (this fork's bundled speed2.exe, see
+ * config/hooks-90d73842.txt) -- each at its own addresses. */
 enum { HUD_A0, HUD_74A, HUD_84, HUD_94, HUD_74B, HUD_1A0, HUD_GLOBAL, MIRROR_R1, MIRROR_L1, MIRROR_L2, MIRROR_R2, BORDER_38, BORDER_48, BORDER_2C, BORDER_3C, RADAR_W30, RADAR_W40, RADAR_H44, RADAR_H54, HUD_HOOK, BLIPS_HOOK, HUD_HOOK2, STOP_SIGN, FMV_QUAD, FOV_SCALE, FOV_CONST1, FOV_CONST2, FOV_CONST3, FRAME_TIME, SITE_COUNT };
 static const uint32_t k_sites[SITE_COUNT] = {
 #if defined(NFSU2_EXE_F4BB0D99)
     0x0051B05Fu, 0x0053655Cu, 0x0053672Du, 0x0053695Du, 0x00536CA5u, 0x0050B099u, 0x0048B5D4u, 0x005CBDCDu, 0x005CBDDDu, 0x005CBDEDu, 0x005CBDFDu, 0x005CBBC9u, 0x005CBBD9u, 0x005CBB5Du, 0x005CBB75u, 0x005C6F3Eu, 0x005C6F4Eu, 0x005C6F56u, 0x005C6F66u, 0x0051AE28u, 0x0051D2E5u, 0x004C6589u, 0x00504D5Fu, 0x005366C2u, 0x005C7C34u, 0x005C7CBEu, 0x005C7CD0u, 0x005C7CF5u, 0x005D2962u,
+#elif defined(NFSU2_EXE_90D73842)
+    0x0051B3CFu, 0x005368DCu, 0x00536AADu, 0x00536CDDu, 0x00537025u, 0x0050B4F9u, 0x0048B644u, 0x005CC10Du, 0x005CC11Du, 0x005CC12Du, 0x005CC13Du, 0x005CBF09u, 0x005CBF19u, 0x005CBE9Du, 0x005CBEB5u, 0x005C727Eu, 0x005C728Eu, 0x005C7296u, 0x005C72A6u, 0x0051B198u, 0x0051D665u, 0x004C6759u, 0x0050516Fu, 0x00536A42u, 0x005C7F74u, 0x005C7FFEu, 0x005C8010u, 0x005C8035u, 0x005D2C22u,
 #else
     0x0051B3CFu, 0x005368CCu, 0x00536A9Du, 0x00536CCDu, 0x00537015u, 0x0050B4F9u, 0x0048B644u, 0x005CC0FDu, 0x005CC10Du, 0x005CC11Du, 0x005CC12Du, 0x005CBEF9u, 0x005CBF09u, 0x005CBE8Du, 0x005CBEA5u, 0x005C726Eu, 0x005C727Eu, 0x005C7286u, 0x005C7296u, 0x0051B198u, 0x0051D655u, 0x004C6759u, 0x0050516Fu, 0x00536A32u, 0x005C7F64u, 0x005C7FEEu, 0x005C8000u, 0x005C8025u, 0x005D2C12u,
 #endif

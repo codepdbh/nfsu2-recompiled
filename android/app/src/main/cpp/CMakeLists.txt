@@ -96,9 +96,19 @@ target_include_directories(nfsu2_android SYSTEM PRIVATE "${DXVK_SOURCE}/include/
 target_include_directories(nfsu2_android PRIVATE "${PCRECOMP}/runtime/recomp32" "${PCRECOMP}/runtime/win32hle" "${NFS_ROOT}/src/runtime")
 # SPEED2.EXE build the generated code was lifted from (scripts/run_lift.py reads
 # the same NFSU2_EXE_BUILD environment variable). Empty = the documented build.
-set(NFSU2_EXE_BUILD "$ENV{NFSU2_EXE_BUILD}" CACHE STRING "SPEED2.EXE build of the lifted code (empty or f4bb0d99)")
+# This fork bundles and lifts against its own build (sha1 90d73842..., see
+# speed2.exe at the repo root) by default; set NFSU2_EXE_BUILD=
+# (empty) to go back to the documented build instead.
+if(DEFINED ENV{NFSU2_EXE_BUILD})
+  set(NFSU2_EXE_BUILD_INIT "$ENV{NFSU2_EXE_BUILD}")
+else()
+  set(NFSU2_EXE_BUILD_INIT "90d73842")
+endif()
+set(NFSU2_EXE_BUILD "${NFSU2_EXE_BUILD_INIT}" CACHE STRING "SPEED2.EXE build of the lifted code (empty, f4bb0d99 or 90d73842)")
 if(NFSU2_EXE_BUILD STREQUAL "f4bb0d99")
   set(EXE_BUILD_DEFS NFSU2_EXE_F4BB0D99)
+elseif(NFSU2_EXE_BUILD STREQUAL "90d73842")
+  set(EXE_BUILD_DEFS NFSU2_EXE_90D73842)
 elseif(NOT NFSU2_EXE_BUILD STREQUAL "")
   message(FATAL_ERROR "Unknown NFSU2_EXE_BUILD '${NFSU2_EXE_BUILD}': add config/hooks-<build>.txt and its table in src/runtime/widescreen.c")
 endif()
