@@ -874,7 +874,7 @@ std::string connectGuestRuntime(const char* executable) {
             nfs_widescreen_init(hostGameRoot.c_str());
             NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen: %d HUD offsets from scripts/NFSUnderground2.WidescreenFix.dat",nfs_widescreen_hud_entries());
         }else if(guestMinimapRelocate){
-            nfs_widescreen_set_minimap_relocate(1);
+            nfs_widescreen_set_minimap_relocate(1,hostGameRoot.c_str());
             NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen disabled: original 4:3 geometry, minimap moved clear of the touch controls");
         }else NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen disabled: original 4:3 geometry");
         if(renderWidth.load()&&renderHeight.load())configureAndroidResolutionModes();

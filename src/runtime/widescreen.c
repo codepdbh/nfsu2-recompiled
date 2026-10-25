@@ -93,16 +93,42 @@ static void adjust_mem_pair(uint32_t vx, uint32_t vy) {
  * needs no WidescreenFix.dat. The offsets are in the game's own ~640-wide HUD
  * space (same units as the other hooks above) and are a first guess pending
  * on-device tuning; override with NFSU2_MINIMAP_RELOCATE_DX/DY meanwhile. */
-static float s_minimap_relocate_dx = -90.0f, s_minimap_relocate_dy = -40.0f;
+/* First guess, corrected once from an on-device screenshot: that first guess
+ * (-90, -40) moved the minimap further left and not far enough up. Flip to
+ * positive X (right) with more magnitude, and a bigger upward Y. */
+static float s_minimap_relocate_dx = 130.0f, s_minimap_relocate_dy = -80.0f;
 static int s_minimap_relocate_env_read;
 static int s_minimap_relocate_mode;   /* set by nfs_widescreen_set_minimap_relocate */
-void nfs_widescreen_set_minimap_relocate(int enabled) { s_minimap_relocate_mode = enabled; }
+/* <game_root>/scripts/MinimapRelocate.txt: "DX DY" on one line, so players can
+ * nudge the minimap by editing a text file on the phone and relaunching --
+ * no rebuild, no adb (environment variables are not practically settable on
+ * Android). Comment lines start with #. Missing/malformed file keeps the
+ * compiled-in default above. */
+static char s_minimap_relocate_root[896];
+void nfs_widescreen_set_minimap_relocate(int enabled, const char* game_root) {
+    s_minimap_relocate_mode = enabled;
+    if (game_root) { snprintf(s_minimap_relocate_root, sizeof s_minimap_relocate_root, "%s", game_root); s_minimap_relocate_env_read = 0; }
+}
 static void minimap_relocate_env(void) {
-    const char* dx = getenv("NFSU2_MINIMAP_RELOCATE_DX");
-    const char* dy = getenv("NFSU2_MINIMAP_RELOCATE_DY");
-    if (dx) s_minimap_relocate_dx = (float)atof(dx);
-    if (dy) s_minimap_relocate_dy = (float)atof(dy);
+    char path[1024]; FILE* f; char line[256];
+    const char* dx_env = getenv("NFSU2_MINIMAP_RELOCATE_DX");
+    const char* dy_env = getenv("NFSU2_MINIMAP_RELOCATE_DY");
     s_minimap_relocate_env_read = 1;
+    if (s_minimap_relocate_root[0]) {
+        snprintf(path, sizeof path, "%s/scripts/MinimapRelocate.txt", s_minimap_relocate_root);
+        f = fopen(path, "r");
+        if (f) {
+            while (fgets(line, sizeof line, f)) {
+                float dx, dy;
+                if (line[0] == '#') continue;
+                if (sscanf(line, "%f %f", &dx, &dy) == 2) { s_minimap_relocate_dx = dx; s_minimap_relocate_dy = dy; break; }
+            }
+            fclose(f);
+        }
+    }
+    /* Environment variables (desktop testing) win over the file. */
+    if (dx_env) s_minimap_relocate_dx = (float)atof(dx_env);
+    if (dy_env) s_minimap_relocate_dy = (float)atof(dy_env);
 }
 static void relocate_minimap_original(float* x, float* y) {
     int ix = (int)floorf(*x), iy = (int)floorf(*y);
