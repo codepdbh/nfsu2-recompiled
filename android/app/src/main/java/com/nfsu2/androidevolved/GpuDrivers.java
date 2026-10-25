@@ -11,9 +11,15 @@ import java.util.*;
 
 /**
  * User-provided adrenotools ZIPs: Turnip, PanVK or other Android ARM64 Vulkan drivers (from the MW port).
- * The app ships no driver; an imported one is loaded by adrenotools in the game and probe processes only.
+ * The app ships one Turnip build for Adreno 710/720/722 (BUNDLED_DRIVER); an imported or bundled driver
+ * is loaded by adrenotools in the game and probe processes only.
  */
 final class GpuDrivers {
+    /** The Adreno 710 system driver splits the frame into blocks (codepdbh/nfsu2-recompiled#1677). */
+    static final String BUNDLED_DRIVER = "drivers/Turnip-710-720-722-v4.0.zip";
+    /** GL_RENDERER of the GPUs the bundled driver is selected for on first launch. */
+    static final java.util.regex.Pattern BUNDLED_DRIVER_GPUS = java.util.regex.Pattern.compile("Adreno \\(TM\\) 7(10|20|22)\\b");
+
     static final class Driver {
         final String id, name, library;
         final File directory;
@@ -54,11 +60,21 @@ final class GpuDrivers {
         GameOptions.prefs(context).edit().putString("gpu_driver", id).apply();
     }
     static Driver importZip(Context context, Uri uri) throws Exception {
+        try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("Не удалось открыть ZIP-файл.");
+            return importStream(context, input);
+        }
+    }
+    /** Installs the driver shipped in the APK (assets/drivers, see NOTICE.txt there). */
+    static Driver installBundled(Context context) throws Exception {
+        try (InputStream input = context.getAssets().open(BUNDLED_DRIVER)) {
+            return importStream(context, input);
+        }
+    }
+    private static Driver importStream(Context context, InputStream input) throws Exception {
         File stage = new File(root(context), ".import-" + UUID.randomUUID());
         if (!stage.mkdirs()) throw new IOException("Не удалось создать каталог для драйвера.");
         try {
-            InputStream input = context.getContentResolver().openInputStream(uri);
-            if (input == null) throw new IOException("Не удалось открыть ZIP-файл.");
             DriverArchive.extract(input, stage);
             File packageRoot = findMeta(stage);
             if (packageRoot == null) throw new IOException("В ZIP-архиве драйвера отсутствует meta.json.");

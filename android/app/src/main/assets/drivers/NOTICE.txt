@@ -1,0 +1,35 @@
+Turnip-710-720-722-v4.0.zip
+
+Mesa Turnip Vulkan driver for Adreno 710/720/722, built by vauzi:
+https://github.com/Vauzi-17/710/releases/tag/4.0
+SHA-256 38d18b10f3203314784102a2dd8a48fe5cd7f09d2b0547ebb3098fbc0aa5e899
+
+Mesa 26.3.0-devel, commit 9315107fc90dfcc3d79e408964054b6042e442a3
+https://gitlab.freedesktop.org/mesa/mesa/-/tree/9315107fc90dfcc3d79e408964054b6042e442a3
+Applied patch: 01-u_gralloc-always-use-ubwc-detection.patch
+
+The core of Mesa, including the Turnip driver, is licensed under the MIT
+license below. Individual source files may carry other licenses; see the
+SPDX identifiers in the Mesa sources and its licenses/ directory.
+
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.

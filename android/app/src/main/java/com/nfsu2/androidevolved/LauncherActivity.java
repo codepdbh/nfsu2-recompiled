@@ -72,6 +72,7 @@ public final class LauncherActivity extends Activity {
                 View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN |
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
         setContentView(buildScreen());
+        if (android.os.Process.is64Bit()) worker.execute(this::selectBundledDriver);
         checkUpdates(false);
         String updated = ReleaseUpdates.pendingWhatsNew(this);
         if (updated != null) showWhatsNew(updated);
@@ -489,6 +490,29 @@ public final class LauncherActivity extends Activity {
                 }
             });
         }
+    }
+
+    /**
+     * Once per install, on the worker: GPUs listed in GpuDrivers.BUNDLED_DRIVER_GPUS get the bundled Turnip
+     * unless a driver is already chosen. A later switch back to the system driver is kept.
+     */
+    private void selectBundledDriver() {
+        android.content.SharedPreferences prefs = GameOptions.prefs(this);
+        if (prefs.getBoolean("bundled_driver_checked", false)) return;
+        String renderer = GpuModel.renderer();
+        if (renderer != null && GpuDrivers.BUNDLED_DRIVER_GPUS.matcher(renderer).find() && GpuDrivers.selected(this) == null) {
+            try {
+                GpuDrivers.Driver driver = GpuDrivers.installBundled(this);
+                GpuDrivers.select(this, driver.id);
+                main.post(() -> {
+                    refresh();
+                    message(getString(R.string.vulkan_driver), getString(R.string.bundled_driver_selected, driver.name, renderer));
+                });
+            } catch (Exception error) {
+                android.util.Log.w("NFSU2", "Bundled Vulkan driver not installed", error);
+            }
+        }
+        prefs.edit().putBoolean("bundled_driver_checked", true).apply();
     }
 
     // ---- Updates and reports ---------------------------------------------------------------------------

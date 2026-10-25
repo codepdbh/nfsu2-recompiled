@@ -72,6 +72,7 @@
     <string name="importing_vulkan_driver">Importando driver Vulkan…</string>
     <string name="driver_imported">Driver importado: %1$s. Usa Probar driver para comprobarlo.</string>
     <string name="driver_import_failed">No se pudo importar el driver: %1$s</string>
+    <string name="bundled_driver_selected">Tu GPU (%2$s) muestra la imagen con fallos con el driver del sistema, así que se activó el driver incluido %1$s. Para volver: Probar driver → Usar driver del sistema.</string>
 
     <string name="updates_title">Actualizaciones</string>
     <string name="updates_current_latest">Tienes la versión %1$s. No hay una versión más reciente en GitHub.</string>

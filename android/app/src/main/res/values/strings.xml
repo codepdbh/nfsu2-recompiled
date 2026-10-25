@@ -72,6 +72,7 @@
     <string name="importing_vulkan_driver">Importing Vulkan driver…</string>
     <string name="driver_imported">Driver imported: %1$s. Use Test driver to verify it.</string>
     <string name="driver_import_failed">Could not import the driver: %1$s</string>
+    <string name="bundled_driver_selected">Your GPU (%2$s) shows a broken picture with the system driver, so the bundled driver %1$s was turned on. To go back: Test driver → Use system driver.</string>
 
     <string name="updates_title">Updates</string>
     <string name="updates_current_latest">You have version %1$s. There is no newer version on GitHub.</string>

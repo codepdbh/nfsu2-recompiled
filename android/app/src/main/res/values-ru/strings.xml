@@ -72,6 +72,7 @@
     <string name="importing_vulkan_driver">Импортируем драйвер Vulkan…</string>
     <string name="driver_imported">Драйвер импортирован: %1$s. Используйте «Проверить драйвер», чтобы протестировать его.</string>
     <string name="driver_import_failed">Не удалось импортировать драйвер: %1$s</string>
+    <string name="bundled_driver_selected">С системным драйвером ваш GPU (%2$s) показывает картинку с артефактами, поэтому включён встроенный драйвер %1$s. Вернуть системный: «Проверить драйвер» → «Использовать системный драйвер».</string>
 
     <string name="updates_title">Обновления</string>
     <string name="updates_current_latest">Установлена версия %1$s. Более новой версии на GitHub нет.</string>
