@@ -969,6 +969,7 @@ void setGuestKey(unsigned scan,bool down){if(scan>=256)return;std::lock_guard<st
 // key tapped faster than the game polls would be missed.
 void setGuestCheatCode(const std::string& code){
     static const unsigned letters[]={0x1e,0x30,0x2e,0x20,0x12,0x21,0x22,0x23,0x17,0x24,0x25,0x26,0x32,0x31,0x18,0x19,0x10,0x13,0x1f,0x14,0x16,0x2f,0x11,0x2d,0x15,0x2c};
+    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Cheat code \"%s\": typing %zu characters, activeWindow=%08x",code.c_str(),code.size(),activeWindow);
     std::thread([code](){
         for(unsigned char raw:code){
             char c=char(std::toupper(raw));unsigned scan=0;
