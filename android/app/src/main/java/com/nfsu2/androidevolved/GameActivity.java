@@ -365,9 +365,4 @@ public final class GameActivity extends NativeActivity {
         // NativeActivity may stay resumed when a runtime permission dialog closes.
         if (code == 1 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) recreate();
     }
-    @Override protected void onDestroy() {
-        super.onDestroy();
-        // Each launch uses a fresh guest machine in the dedicated :game process.
-        android.os.Process.killProcess(android.os.Process.myPid());
-    }
 }
