@@ -333,6 +333,16 @@ public final class GameActivity extends NativeActivity {
         return localized;
     }
     public void setStatus(String message) {
+        // The game calling ExitProcess (its own "Exit" menu item, not a crash) surfaces as a
+        // GuestStop with this text. Treat it as the player quitting and close the app with it,
+        // instead of leaving them staring at a frozen status screen.
+        if (message.contains("ExitProcess(")) {
+            runOnUiThread(() -> {
+                finishAndRemoveTask();
+                android.os.Process.killProcess(android.os.Process.myPid());
+            });
+            return;
+        }
         runOnUiThread(() -> {
             if (statusHideTask != null) status.removeCallbacks(statusHideTask);
             boolean crtEntry = message.contains("Ejecutando entrada CRT");
