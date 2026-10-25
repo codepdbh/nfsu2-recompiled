@@ -403,6 +403,7 @@ const std::map<std::string,recomp_func_t> windowFunctions={
     {"BeginPaint",beginPaint},{"EndPaint",endPaint},
     {"AdjustWindowRect",adjustWindowRect},{"ShowWindow",showWindow},{"SetWindowPos",setWindowPos},{"UpdateWindow",updateWindow},
     {"RegisterClassExA",registerClassEx},{"CreateWindowExA",createWindowEx},{"DefWindowProcA",defaultWindowProc},
+    {"DestroyWindow",destroyWindow},
     {"GetWindowLongA",getWindowLong},{"SetWindowLongA",setWindowLong},
     {"LoadIconA",loadIcon},{"LoadCursorA",loadCursor},
     {"GetDesktopWindow",desktopHandle},{"GetWindowRect",windowRect},

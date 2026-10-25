@@ -115,6 +115,16 @@ void enqueueGuestPointer(int phase){  // 0 down, 1 move, 2 up
 }
 void setCapture(){uint32_t old=captureWindow;captureWindow=windows.count(arg(0))?arg(0):0;ret(old,1);}
 void releaseCapture(){captureWindow=0;ret(1,0);}
+void destroyWindow(){
+    uint32_t handle=arg(0);
+    if(!windows.count(handle)){lastError=1400;ret(0,1);return;}
+    windowMessage(handle,2,0,0);     // WM_DESTROY
+    windowMessage(handle,0x82,0,0);  // WM_NCDESTROY
+    if(activeWindow==handle)activeWindow=0;
+    if(captureWindow==handle)captureWindow=0;
+    windows.erase(handle);
+    ret(1,1);
+}
 bool takeWindowMessage(uint32_t output,uint32_t handle,uint32_t minimum,uint32_t maximum,bool remove){
     std::lock_guard<std::mutex> lock(messageMutex);
     for(auto it=windowMessages.begin();it!=windowMessages.end();++it){

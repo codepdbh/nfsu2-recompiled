@@ -963,16 +963,25 @@ void setGuestKey(unsigned scan,bool down){if(scan>=256)return;std::lock_guard<st
 // enqueueGuestText): the game's built-in Press-Start cheat codes are plain keyboard input, not
 // text typed into a field, so they need genuine key events. Letters and digits only, matching
 // the scancodes a PC keyboard actually sends; anything else in the string is skipped.
+// Paced on a background thread, not sent as one instant burst: the game likely samples keyboard
+// state once per frame (~19 ms at its usual pace), so a down+up pair posted back to back in the
+// same native call could come and go between two samples and never register, the same way a real
+// key tapped faster than the game polls would be missed.
 void setGuestCheatCode(const std::string& code){
     static const unsigned letters[]={0x1e,0x30,0x2e,0x20,0x12,0x21,0x22,0x23,0x17,0x24,0x25,0x26,0x32,0x31,0x18,0x19,0x10,0x13,0x1f,0x14,0x16,0x2f,0x11,0x2d,0x15,0x2c};
-    for(unsigned char raw:code){
-        char c=char(std::toupper(raw));unsigned scan=0;
-        if(c>='A'&&c<='Z')scan=letters[c-'A'];
-        else if(c=='0')scan=0x0b;
-        else if(c>='1'&&c<='9')scan=0x02u+unsigned(c-'1');
-        if(!scan)continue;
-        setGuestKey(scan,true);setGuestKey(scan,false);
-    }
+    std::thread([code](){
+        for(unsigned char raw:code){
+            char c=char(std::toupper(raw));unsigned scan=0;
+            if(c>='A'&&c<='Z')scan=letters[c-'A'];
+            else if(c=='0')scan=0x0b;
+            else if(c>='1'&&c<='9')scan=0x02u+unsigned(c-'1');
+            if(!scan)continue;
+            setGuestKey(scan,true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
+            setGuestKey(scan,false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        }
+    }).detach();
 }
 void clearGuestInput(){std::lock_guard<std::mutex> lock(inputMutex);for(unsigned scan=0;scan<256;++scan)if(inputKeys[scan]){recordInputKey(scan,false);enqueueGuestKey(scan,false);}inputKeys.fill(0);inputMouseButtons.fill(0);inputMouseX=inputMouseY=inputMouseZ=0;}
 void setGuestPointer(float x,float y,int phase){
