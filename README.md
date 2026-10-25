@@ -1,5 +1,6 @@
 # Need for Speed Underground 2 — Recompiled
 
+Форк проекта [codepdbh/nfsu2-recompiled](https://github.com/codepdbh/nfsu2-recompiled).
 
 ### Android downloads / Descargas Android
 
