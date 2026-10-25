@@ -36,6 +36,7 @@ final class RacingControlsView extends View {
     private final Runnable textInput;
     private final Runnable configureTilt;
     private final Runnable configureFrameLimit;
+    private final Runnable cheatCodes;
     private String style;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -66,10 +67,10 @@ final class RacingControlsView extends View {
             area = new RectF(x, y, x+w, y+h); original=new RectF(area); this.shape=shape; this.icon=icon; this.scan=scan; this.color=color;
         }
     }
-    RacingControlsView(Context context, Keys keys, Runnable textInput, Runnable configureTilt, Runnable configureFrameLimit) {
+    RacingControlsView(Context context, Keys keys, Runnable textInput, Runnable configureTilt, Runnable configureFrameLimit, Runnable cheatCodes) {
         super(context); this.keys=keys; this.textInput=textInput;
         layouts=context.getSharedPreferences("touch_layouts_v1",Context.MODE_PRIVATE);
-        style=layouts.getString("style","classic");this.configureTilt=configureTilt;this.configureFrameLimit=configureFrameLimit;
+        style=layouts.getString("style","classic");this.configureTilt=configureTilt;this.configureFrameLimit=configureFrameLimit;this.cheatCodes=cheatCodes;
         setContentDescription(getContext().getString(R.string.controls_content_description));
         setHapticFeedbackEnabled(true);
         line.setStyle(Paint.Style.STROKE);line.setStrokeCap(Paint.Cap.ROUND);line.setStrokeJoin(Paint.Join.ROUND);
@@ -339,9 +340,10 @@ final class RacingControlsView extends View {
     }
     private void showOptions() {
         new AlertDialog.Builder(getContext()).setTitle(R.string.controls_options_title)
-                .setItems(new String[]{getContext().getString(R.string.controls_option_style),getContext().getString(R.string.controls_option_tilt),getContext().getString(R.string.controls_option_fps),getContext().getString(R.string.controls_option_save_layout),getContext().getString(R.string.controls_option_load_layout)},(dialog,which)->{
+                .setItems(new String[]{getContext().getString(R.string.controls_option_style),getContext().getString(R.string.controls_option_tilt),getContext().getString(R.string.controls_option_fps),getContext().getString(R.string.controls_option_save_layout),getContext().getString(R.string.controls_option_load_layout),getContext().getString(R.string.controls_option_cheats)},(dialog,which)->{
                     if(which==0)chooseStyle();else if(which==1)configureTilt.run();
-                    else if(which==2)configureFrameLimit.run();else if(which==3)saveNamedLayout();else loadNamedLayout();
+                    else if(which==2)configureFrameLimit.run();else if(which==3)saveNamedLayout();
+                    else if(which==4)loadNamedLayout();else cheatCodes.run();
                 }).setNegativeButton(R.string.common_close,null).show();
     }
     private void chooseStyle() {

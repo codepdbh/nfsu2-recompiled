@@ -959,6 +959,21 @@ void setGuestFrameLimit(unsigned framesPerSecond){
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Android frame limit %u FPS (0 means uncapped)",frameLimit.load());
 }
 void setGuestKey(unsigned scan,bool down){if(scan>=256)return;std::lock_guard<std::mutex> lock(inputMutex);if(bool(inputKeys[scan])==down)return;inputKeys[scan]=down?0x80:0;recordInputKey(scan,down);enqueueGuestKey(scan,down);}
+// Types a string as real keydown/keyup pairs (same path as the touch D-pad), not WM_CHAR (see
+// enqueueGuestText): the game's built-in Press-Start cheat codes are plain keyboard input, not
+// text typed into a field, so they need genuine key events. Letters and digits only, matching
+// the scancodes a PC keyboard actually sends; anything else in the string is skipped.
+void setGuestCheatCode(const std::string& code){
+    static const unsigned letters[]={0x1e,0x30,0x2e,0x20,0x12,0x21,0x22,0x23,0x17,0x24,0x25,0x26,0x32,0x31,0x18,0x19,0x10,0x13,0x1f,0x14,0x16,0x2f,0x11,0x2d,0x15,0x2c};
+    for(unsigned char raw:code){
+        char c=char(std::toupper(raw));unsigned scan=0;
+        if(c>='A'&&c<='Z')scan=letters[c-'A'];
+        else if(c=='0')scan=0x0b;
+        else if(c>='1'&&c<='9')scan=0x02u+unsigned(c-'1');
+        if(!scan)continue;
+        setGuestKey(scan,true);setGuestKey(scan,false);
+    }
+}
 void clearGuestInput(){std::lock_guard<std::mutex> lock(inputMutex);for(unsigned scan=0;scan<256;++scan)if(inputKeys[scan]){recordInputKey(scan,false);enqueueGuestKey(scan,false);}inputKeys.fill(0);inputMouseButtons.fill(0);inputMouseX=inputMouseY=inputMouseZ=0;}
 void setGuestPointer(float x,float y,int phase){
     guestPointerX=std::clamp(x,0.f,1.f);guestPointerY=std::clamp(y,0.f,1.f);

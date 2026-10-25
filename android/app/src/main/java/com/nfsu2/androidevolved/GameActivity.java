@@ -156,6 +156,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeFrameLimit(int framesPerSecond);
     private static native void nativeWidescreen(boolean enabled);
     private static native void nativeMinimapRelocate(boolean enabled);
+    private static native void nativeCheatCode(String code);
     private static native void nativeOnlineServer(String host);
     private static native void nativeGamepadConnected(boolean connected);
     private static native void nativeGamepadDevices(int[] ids);
@@ -205,6 +206,54 @@ public final class GameActivity extends NativeActivity {
         name.requestFocus();
         dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
+    /**
+     * The game's own Press-Start cheat codes (money, tuning parts, bonus cars): typed as real key
+     * presses (nativeCheatCode), not text-field input, since that is what that screen reads.
+     */
+    private void showCheatCodes() {
+        int[] res = {R.string.cheat_ordermebaby, R.string.cheat_regmybank, R.string.cheat_regmebaby,
+                R.string.cheat_coolmoney, R.string.cheat_needperformance1, R.string.cheat_needperformance2,
+                R.string.cheat_gimmevisual1, R.string.cheat_gimmevisual2, R.string.cheat_opendoors,
+                R.string.cheat_gimmechingy, R.string.cheat_tunejapantuning, R.string.cheat_davidchoeart,
+                R.string.cheat_shinestreetbright, R.string.cheat_wannacapone, R.string.cheat_wantmyd3};
+        String[] codes = {"ordermebaby", "regmybank", "regmebaby", "coolmoney", "needperformance1",
+                "needperformance2", "gimmevisual1", "gimmevisual2", "opendoors", "gimmechingy",
+                "tunejapantuning", "davidchoeart", "shinestreetbright", "wannacapone", "wantmyd3"};
+        String[] labels = new String[res.length + 1];
+        for (int i = 0; i < res.length; i++) labels[i] = getString(res[i]);
+        labels[res.length] = getString(R.string.cheats_custom_entry);
+
+        new AlertDialog.Builder(this).setTitle(R.string.cheats_title)
+                .setMessage(R.string.cheats_hint)
+                .setItems(labels, (dialog, which) -> {
+                    if (which < codes.length) sendCheatCode(codes[which]);
+                    else showCustomCheatCode();
+                })
+                .setNegativeButton(R.string.common_close, null)
+                .show();
+    }
+    private void showCustomCheatCode() {
+        EditText custom = new EditText(this);
+        custom.setSingleLine(true);
+        custom.setHint(R.string.cheats_custom_hint);
+        custom.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        int pad = dp(20);
+        LinearLayout form = new LinearLayout(this);
+        form.setPadding(pad, pad / 2, pad, 0);
+        form.addView(custom);
+        new AlertDialog.Builder(this).setTitle(R.string.cheats_custom_entry)
+                .setView(form)
+                .setPositiveButton(R.string.cheats_send, (dialog, which) -> {
+                    String value = custom.getText().toString().trim();
+                    if (!value.isEmpty()) sendCheatCode(value);
+                })
+                .setNegativeButton(R.string.common_cancel, null)
+                .show();
+    }
+    private void sendCheatCode(String code) {
+        nativeCheatCode(code);
+        Toast.makeText(this, getString(R.string.cheats_sent, code), Toast.LENGTH_SHORT).show();
+    }
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         inputManager=(android.hardware.input.InputManager)getSystemService(INPUT_SERVICE);
@@ -253,7 +302,7 @@ public final class GameActivity extends NativeActivity {
         statusWindow = new PopupWindow(status, ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, false);
         statusWindow.setTouchable(false);
-        touchControls = new RacingControlsView(this, this::setTouchKey, this::showTextInput,this::showTiltOptions,this::showFrameLimitOptions);
+        touchControls = new RacingControlsView(this, this::setTouchKey, this::showTextInput,this::showTiltOptions,this::showFrameLimitOptions,this::showCheatCodes);
         touchControls.setPointer(GameActivity::nativePointer);
         controlsWindow = new PopupWindow(touchControls, ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT, false);
