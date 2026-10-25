@@ -223,8 +223,10 @@ public final class GameActivity extends NativeActivity {
         for (int i = 0; i < res.length; i++) labels[i] = getString(res[i]);
         labels[res.length] = getString(R.string.cheats_custom_entry);
 
-        new AlertDialog.Builder(this).setTitle(R.string.cheats_title)
-                .setMessage(R.string.cheats_hint)
+        // setMessage() and setItems() on the same builder are mutually exclusive in Android:
+        // the message wins and the item list silently never renders. The hint goes into the
+        // title instead so the code list actually shows up.
+        new AlertDialog.Builder(this).setTitle(getString(R.string.cheats_title) + "\n" + getString(R.string.cheats_hint))
                 .setItems(labels, (dialog, which) -> {
                     if (which < codes.length) sendCheatCode(codes[which]);
                     else showCustomCheatCode();
