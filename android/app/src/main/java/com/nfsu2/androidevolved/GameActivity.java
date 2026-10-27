@@ -293,8 +293,14 @@ public final class GameActivity extends NativeActivity {
         }
         if (hold) lanBroadcasts.acquire(); else lanBroadcasts.release();
     }
+    // After 3 minutes in the game (time in the foreground), once per launch:
+    // the official developer channel.
+    private long creditLeftMs=180000,creditSinceMs;
+    private final Runnable creditToast=()->{creditLeftMs=0;Toast.makeText(this,"yt: daniel54bhp",Toast.LENGTH_LONG).show();};
+    private final android.os.Handler creditHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     @Override protected void onPause() {
         foreground=false;
+        if(creditLeftMs>0){creditHandler.removeCallbacks(creditToast);creditLeftMs=Math.max(1,creditLeftMs-(android.os.SystemClock.uptimeMillis()-creditSinceMs));}
         holdLanBroadcasts(false);
         updateTiltSensor();
         if(inputManager!=null)inputManager.unregisterInputDeviceListener(gamepadListener);
@@ -306,6 +312,7 @@ public final class GameActivity extends NativeActivity {
     @Override protected void onResume() {
         super.onResume();
         foreground=true;
+        if(creditLeftMs>0){creditSinceMs=android.os.SystemClock.uptimeMillis();creditHandler.postDelayed(creditToast,creditLeftMs);}
         holdLanBroadcasts(true);
         updateTiltSensor();
         if(inputManager!=null){inputManager.registerInputDeviceListener(gamepadListener,null);updateGamepads();}
