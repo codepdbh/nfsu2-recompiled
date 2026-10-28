@@ -165,12 +165,6 @@ public final class LauncherActivity extends Activity {
         accessParams.topMargin = dp(10);
         left.addView(access, accessParams);
 
-        Button channel = actionButton("Canal del desarrollador oficial", false);
-        channel.setOnClickListener(view -> openChannel());
-        LinearLayout.LayoutParams channelParams = new LinearLayout.LayoutParams(-1, dp(46));
-        channelParams.topMargin = dp(10);
-        left.addView(channel, channelParams);
-
         // Right: options.
         LinearLayout right = card();
         LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f);
@@ -532,13 +526,6 @@ public final class LauncherActivity extends Activity {
         bg.setStroke(dp(1), 0x448EE03A);
         card.setBackground(bg);
         return card;
-    }
-
-    // The ports' official developer channel.
-    static final String CHANNEL = "https://www.youtube.com/@daniel54bhp";
-    private void openChannel() {
-        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(CHANNEL))); }
-        catch (android.content.ActivityNotFoundException e) { android.widget.Toast.makeText(this, CHANNEL, android.widget.Toast.LENGTH_LONG).show(); }
     }
 
     private Button actionButton(String text, boolean primary) {
