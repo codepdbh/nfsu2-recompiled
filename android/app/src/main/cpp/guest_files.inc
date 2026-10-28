@@ -19,7 +19,7 @@ std::filesystem::path gamePath(std::string guest){
 }
 std::map<uint32_t,int> fileHandles;uint32_t nextFileHandle=0xf0060000;
 // The game skips its CD-drive check when the game folder holds a file named
-// "foobar" (its developer switch, 0x0057CAC0("foobar")). Copies made without
+// "foobar" (its developer switch, 0x0057CAD0("foobar")). Copies made without
 // it showed the insert-disc MessageBoxA. Present it as an empty file when absent.
 bool discCheckSwitch(const std::filesystem::path& path){
     std::error_code error;

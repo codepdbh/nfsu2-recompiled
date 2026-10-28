@@ -37,3 +37,4 @@ src/recomp/gen_server/
 
 # Tester diagnostic reports
 NFSU2-diagnostico-*.zip
+.idea

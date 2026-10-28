@@ -56,9 +56,11 @@ add_executable(NFSU2-Recompiled
   $<TARGET_OBJECTS:nfs_gen>)
 # SPEED2.EXE build the generated code was lifted from (scripts/run_lift.py reads
 # the same NFSU2_EXE_BUILD environment variable). Empty = the documented build.
-set(NFSU2_EXE_BUILD "$ENV{NFSU2_EXE_BUILD}" CACHE STRING "SPEED2.EXE build of the lifted code (empty or f4bb0d99)")
+set(NFSU2_EXE_BUILD "$ENV{NFSU2_EXE_BUILD}" CACHE STRING "SPEED2.EXE build of the lifted code (empty, f4bb0d99 or 90d73842)")
 if(NFSU2_EXE_BUILD STREQUAL "f4bb0d99")
   set(EXE_BUILD_DEFS NFSU2_EXE_F4BB0D99)
+elseif(NFSU2_EXE_BUILD STREQUAL "90d73842")
+  set(EXE_BUILD_DEFS NFSU2_EXE_90D73842)
 elseif(NOT NFSU2_EXE_BUILD STREQUAL "")
   message(FATAL_ERROR "Unknown NFSU2_EXE_BUILD '${NFSU2_EXE_BUILD}': add config/hooks-<build>.txt and its table in src/runtime/widescreen.c")
 endif()

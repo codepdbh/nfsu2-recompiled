@@ -3,8 +3,9 @@ package com.nfsu2.androidevolved;
 /** Compare stable release tags numerically (0.10.0 > 0.5.4), never by text or publication date. */
 final class ReleaseVersion {
     private static int[] parse(String version) {
-        if (version == null || !version.matches("v?[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}")) return null;
-        String[] parts = version.replaceFirst("^v", "").split("\\.");
+        if (version == null || !version.matches("v?[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}(?:-[A-Za-z0-9.]+)?")) return null;
+        String clean = version.replaceFirst("^v", "").replaceAll("-[A-Za-z0-9.]+$", "");
+        String[] parts = clean.split("\\.");
         return new int[] {Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2])};
     }
     static boolean newer(String remote, String installed) {

@@ -115,6 +115,16 @@ void enqueueGuestPointer(int phase){  // 0 down, 1 move, 2 up
 }
 void setCapture(){uint32_t old=captureWindow;captureWindow=windows.count(arg(0))?arg(0):0;ret(old,1);}
 void releaseCapture(){captureWindow=0;ret(1,0);}
+void destroyWindow(){
+    uint32_t handle=arg(0);
+    if(!windows.count(handle)){lastError=1400;ret(0,1);return;}
+    windowMessage(handle,2,0,0);     // WM_DESTROY
+    windowMessage(handle,0x82,0,0);  // WM_NCDESTROY
+    if(activeWindow==handle)activeWindow=0;
+    if(captureWindow==handle)captureWindow=0;
+    windows.erase(handle);
+    ret(1,1);
+}
 bool takeWindowMessage(uint32_t output,uint32_t handle,uint32_t minimum,uint32_t maximum,bool remove){
     std::lock_guard<std::mutex> lock(messageMutex);
     for(auto it=windowMessages.begin();it!=windowMessages.end();++it){
@@ -138,12 +148,18 @@ void getMessage(){
     while(!takeWindowMessage(arg(0),arg(1),arg(2),arg(3),true)){checkGuestProgress();yieldGuestMachine(1);}
     ret(read32(arg(0)+4)==0x12?0:1,4);
 }
-void dispatchMessage(){uint32_t message=arg(0);if(!message){ret(0,1);return;}ret(windowMessage(read32(message),read32(message+4),read32(message+8),read32(message+12)),1);}
+void dispatchMessage(){
+    uint32_t message=arg(0);if(!message){ret(0,1);return;}
+    uint32_t hwnd=read32(message),type=read32(message+4),wparam=read32(message+8),lparam=read32(message+12);
+    if(type==0x102)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","DispatchMessage: WM_CHAR '%c' to hwnd=%08x (%s)",(char)wparam,hwnd,windows.count(hwnd)?"known window":"UNKNOWN HWND");
+    ret(windowMessage(hwnd,type,wparam,lparam),1);
+}
 void translateMessage(){
     uint32_t address=arg(0);if(!address){ret(0,1);return;}uint32_t type=read32(address+4),key=read32(address+8);
     if(type!=0x100&&type!=0x104){ret(0,1);return;}
     if((key>='A'&&key<='Z')||(key>='0'&&key<='9')||key==13||key==9||key==32||key==8){
         if(key>='A'&&key<='Z')key+='a'-'A';
+        NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","TranslateMessage: WM_KEYDOWN '%c' -> WM_CHAR hwnd=%08x",(char)key,read32(address));
         std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({read32(address),0x102,key,read32(address+12),messageTime()});
     }
     ret(1,1);
