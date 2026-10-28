@@ -10,6 +10,7 @@
 #if defined(__ANDROID__) || defined(NFS_D3D9_BACKEND)
 #include "d3d9_bridge.h"
 #include "nfs_widescreen.h"
+#include "game_data.h"
 #endif
 #include <array>
 #include <vector>
@@ -153,8 +154,9 @@ uint32_t resourceRva{},resourceSize{};
 // plain globals, not thread_local, which cost a TLS descriptor call per COM call.
 uint32_t lastImport{};
 std::string hostGameRoot;
-std::string guestLanguage="Spanish";
+std::string guestLanguage="English UK";
 bool guestWidescreen=true;
+bool guestMinimapRelocate=false;
 std::atomic<bool> stopRequested{false};
 std::atomic<bool> guestPaused{false};
 std::chrono::steady_clock::time_point bootDeadline;
@@ -520,8 +522,17 @@ void loadImage(const char* path) {
         nt.FileHeader.SizeOfOptionalHeader<sizeof(pe_opt_header32)) throw GuestStop("Expected x86 PE32");
     auto opt=nt.OptionalHeader; imageBase=opt.ImageBase; imageSize=opt.SizeOfImage;
     resourceRva=opt.DataDirectory[2].VirtualAddress;resourceSize=opt.DataDirectory[2].Size;
-    if (imageBase!=0x400000 || imageSize!=0x532000 || opt.AddressOfEntryPoint!=0x35bcc7)
+    if (imageBase!=0x400000 || opt.AddressOfEntryPoint!=0x35bcc7)
         throw GuestStop("PE layout does not match generated NFSU2 code");
+    // No-CD builds can report an unaligned SizeOfImage; map every section in full.
+    {
+        uint64_t sectionsAt=uint64_t(dos.e_lfanew)+24+nt.FileHeader.SizeOfOptionalHeader;
+        for (uint32_t i=0;i<nt.FileHeader.NumberOfSections;++i) {
+            auto sec=fileStruct<pe_section_header>(file,sectionsAt+i*sizeof(pe_section_header));
+            imageSize=std::max(imageSize,sec.VirtualAddress+std::max(sec.VirtualSize,sec.SizeOfRawData));
+        }
+        imageSize=(imageSize+0xfffu)&~0xfffu;
+    }
     memory->commit(imageBase,imageSize);
     imageRange(0,opt.SizeOfHeaders);
     if (opt.SizeOfHeaders>file.size()) throw GuestStop("Truncated PE headers");
@@ -862,6 +873,9 @@ std::string connectGuestRuntime(const char* executable) {
         if(guestWidescreen){
             nfs_widescreen_init(hostGameRoot.c_str());
             NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen: %d HUD offsets from scripts/NFSUnderground2.WidescreenFix.dat",nfs_widescreen_hud_entries());
+        }else if(guestMinimapRelocate){
+            nfs_widescreen_set_minimap_relocate(1,hostGameRoot.c_str());
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen disabled: original 4:3 geometry, minimap moved clear of the touch controls");
         }else NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Widescreen disabled: original 4:3 geometry");
         if(renderWidth.load()&&renderHeight.load())configureAndroidResolutionModes();
         memory->commit(stackBase,stackSize); memory->commit(tib,0x1000);
@@ -877,9 +891,9 @@ std::string connectGuestRuntime(const char* executable) {
         testGeneratedCallbacks();
         if(renderWidth.load()&&renderHeight.load()){
             uint32_t outputs=allocate(12);write32(outputs+8,0xdeadbeef);
-            callGuest(0x005bf610,{outputs,outputs+4});
+            callGuest(0x005bf620,{outputs,outputs+4});
             if(read32(outputs)!=renderWidth.load()||read32(outputs+4)!=renderHeight.load()||read32(outputs+8)!=0xdeadbeef)throw GuestStop("Guest resolution ABI failed");
-            for(uint32_t i=0;i<6;++i){write32(0x870d1c,i);callGuest(0x005bf610,{outputs,outputs+4});
+            for(uint32_t i=0;i<6;++i){write32(0x870d1c,i);callGuest(0x005bf620,{outputs,outputs+4});
                 if(read32(outputs)!=guestRenderModes[i].width||read32(outputs+4)!=guestRenderModes[i].height||read32(outputs+8)!=0xdeadbeef)throw GuestStop("Guest resolution slot/guard check failed");}
             write32(0x870d1c,5);firstGameResolution=true;
             heaps->free(GuestHeaps::process,outputs);
@@ -945,6 +959,31 @@ void setGuestFrameLimit(unsigned framesPerSecond){
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Android frame limit %u FPS (0 means uncapped)",frameLimit.load());
 }
 void setGuestKey(unsigned scan,bool down){if(scan>=256)return;std::lock_guard<std::mutex> lock(inputMutex);if(bool(inputKeys[scan])==down)return;inputKeys[scan]=down?0x80:0;recordInputKey(scan,down);enqueueGuestKey(scan,down);}
+// Types a string as real keydown/keyup pairs (same path as the touch D-pad), not WM_CHAR (see
+// enqueueGuestText): the game's built-in Press-Start cheat codes are plain keyboard input, not
+// text typed into a field, so they need genuine key events. Letters and digits only, matching
+// the scancodes a PC keyboard actually sends; anything else in the string is skipped.
+// Paced on a background thread, not sent as one instant burst: the game likely samples keyboard
+// state once per frame (~19 ms at its usual pace), so a down+up pair posted back to back in the
+// same native call could come and go between two samples and never register, the same way a real
+// key tapped faster than the game polls would be missed.
+void setGuestCheatCode(const std::string& code){
+    static const unsigned letters[]={0x1e,0x30,0x2e,0x20,0x12,0x21,0x22,0x23,0x17,0x24,0x25,0x26,0x32,0x31,0x18,0x19,0x10,0x13,0x1f,0x14,0x16,0x2f,0x11,0x2d,0x15,0x2c};
+    NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Cheat code \"%s\": typing %zu characters, activeWindow=%08x",code.c_str(),code.size(),activeWindow);
+    std::thread([code](){
+        for(unsigned char raw:code){
+            char c=char(std::toupper(raw));unsigned scan=0;
+            if(c>='A'&&c<='Z')scan=letters[c-'A'];
+            else if(c=='0')scan=0x0b;
+            else if(c>='1'&&c<='9')scan=0x02u+unsigned(c-'1');
+            if(!scan)continue;
+            setGuestKey(scan,true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
+            setGuestKey(scan,false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        }
+    }).detach();
+}
 void clearGuestInput(){std::lock_guard<std::mutex> lock(inputMutex);for(unsigned scan=0;scan<256;++scan)if(inputKeys[scan]){recordInputKey(scan,false);enqueueGuestKey(scan,false);}inputKeys.fill(0);inputMouseButtons.fill(0);inputMouseX=inputMouseY=inputMouseZ=0;}
 void setGuestPointer(float x,float y,int phase){
     guestPointerX=std::clamp(x,0.f,1.f);guestPointerY=std::clamp(y,0.f,1.f);
@@ -954,9 +993,10 @@ void setGuestPointer(float x,float y,int phase){
 void typeGuestText(const std::vector<uint32_t>& characters){enqueueGuestText(characters);}
 void setGuestOnlineServer(const std::string& host){std::lock_guard<MachineMutex> lock(machine);if(!memory&&!host.empty())onlineServer=host;}
 void setGuestWidescreen(bool enabled){std::lock_guard<MachineMutex> lock(machine);if(!memory)guestWidescreen=enabled;}
+void setGuestMinimapRelocate(bool enabled){std::lock_guard<MachineMutex> lock(machine);if(!memory)guestMinimapRelocate=enabled;}
 void setGuestLanguage(const char* language){
     std::lock_guard<MachineMutex> lock(machine);if(memory)return;
     for(const char* known:{"Spanish","English UK","French","German","Italian","Dutch","Swedish","Danish","Japanese","Korean","Chinese (Traditional)","Thai"})
         if(language&&std::strcmp(known,language)==0){guestLanguage=known;NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Selected guest language: %s",known);return;}
-    guestLanguage="Spanish";
+    guestLanguage="English UK";
 }

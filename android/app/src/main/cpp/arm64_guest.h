@@ -9,7 +9,7 @@ extern int nfs_android_resolution(void);
 #undef RECOMP_ENTER
 #define RECOMP_ENTER(va) do { \
     g_cur_func=(va); RECOMP_FLAGS_IN(); \
-    if((va)==0x005BF610u){ \
+    if((va)==0x005BF620u){ \
         RECOMP_REGS_OUT(); \
         if(nfs_android_resolution()){RECOMP_REGS_IN();return;} \
         RECOMP_REGS_IN(); \

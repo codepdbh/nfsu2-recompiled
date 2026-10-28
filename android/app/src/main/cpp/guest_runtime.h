@@ -8,6 +8,7 @@ void requestGuestRuntimeStop();
 void setGuestPaused(bool paused);
 void setGuestDisplaySize(unsigned width,unsigned height);
 void setGuestKey(unsigned scan,bool down);
+void setGuestCheatCode(const std::string& code);
 void clearGuestInput();
 bool guestDrivingControls();
 // Physical gamepad seen by the game as a DirectInput joystick: axes X, Y, Z
@@ -18,6 +19,7 @@ void setGuestPadConnected(bool connected);
 bool guestGamepadInUse();
 // Launcher option; only before the guest boots.
 void setGuestWidescreen(bool enabled);
+void setGuestMinimapRelocate(bool enabled);
 void setGuestOnlineServer(const std::string& host);
 /** Touch as mouse: x/y as a fraction of the game view; phase 0 down, 1 move, 2 up (left button). */
 void setGuestPointer(float x,float y,int phase);

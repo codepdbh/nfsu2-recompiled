@@ -84,14 +84,75 @@ static void adjust_mem_pair(uint32_t vx, uint32_t vy) {
     wrf(vx, x); wrf(vy, y);
 }
 
+/* Minimap-only nudge for original 4:3 (Widescreen = off, no HUD/FOV
+ * correction at all): the touch controls' steering/shift buttons sit over the
+ * minimap's stock bottom-left corner, so move just the minimap toward the
+ * screen's left-center, clear of them. Everything else (speedometer, FOV,
+ * geometry) stays exactly where the game draws it.
+ * Reuses the mod's fixed minimap anchors (see is_minimap) directly, so it
+ * needs no WidescreenFix.dat. The offsets are in the game's own ~640-wide HUD
+ * space (same units as the other hooks above) and are a first guess pending
+ * on-device tuning; override with NFSU2_MINIMAP_RELOCATE_DX/DY meanwhile. */
+/* First guess, corrected once from an on-device screenshot: that first guess
+ * (-90, -40) moved the minimap further left and not far enough up. Flip to
+ * positive X (right) with more magnitude, and a bigger upward Y. */
+static float s_minimap_relocate_dx = 130.0f, s_minimap_relocate_dy = -80.0f;
+static int s_minimap_relocate_env_read;
+static int s_minimap_relocate_mode;   /* set by nfs_widescreen_set_minimap_relocate */
+/* <game_root>/scripts/MinimapRelocate.txt: "DX DY" on one line, so players can
+ * nudge the minimap by editing a text file on the phone and relaunching --
+ * no rebuild, no adb (environment variables are not practically settable on
+ * Android). Comment lines start with #. Missing/malformed file keeps the
+ * compiled-in default above. */
+static char s_minimap_relocate_root[896];
+void nfs_widescreen_set_minimap_relocate(int enabled, const char* game_root) {
+    s_minimap_relocate_mode = enabled;
+    if (game_root) { snprintf(s_minimap_relocate_root, sizeof s_minimap_relocate_root, "%s", game_root); s_minimap_relocate_env_read = 0; }
+}
+static void minimap_relocate_env(void) {
+    char path[1024]; FILE* f; char line[256];
+    const char* dx_env = getenv("NFSU2_MINIMAP_RELOCATE_DX");
+    const char* dy_env = getenv("NFSU2_MINIMAP_RELOCATE_DY");
+    s_minimap_relocate_env_read = 1;
+    if (s_minimap_relocate_root[0]) {
+        snprintf(path, sizeof path, "%s/scripts/MinimapRelocate.txt", s_minimap_relocate_root);
+        f = fopen(path, "r");
+        if (f) {
+            while (fgets(line, sizeof line, f)) {
+                float dx, dy;
+                if (line[0] == '#') continue;
+                if (sscanf(line, "%f %f", &dx, &dy) == 2) { s_minimap_relocate_dx = dx; s_minimap_relocate_dy = dy; break; }
+            }
+            fclose(f);
+        }
+    }
+    /* Environment variables (desktop testing) win over the file. */
+    if (dx_env) s_minimap_relocate_dx = (float)atof(dx_env);
+    if (dy_env) s_minimap_relocate_dy = (float)atof(dy_env);
+}
+static void relocate_minimap_original(float* x, float* y) {
+    int ix = (int)floorf(*x), iy = (int)floorf(*y);
+    if (!((ix == -223 && (iy == 70 || iy == 71 || iy == 142 || iy == 143)) || (ix == -143 && iy == 196))) return;
+    if (!s_minimap_relocate_env_read) minimap_relocate_env();
+    *x += s_minimap_relocate_dx; *y += s_minimap_relocate_dy;
+}
+static void relocate_mem_pair_minimap_only(uint32_t vx, uint32_t vy) {
+    float x = rdf(vx), y = rdf(vy);
+    relocate_minimap_original(&x, &y);
+    wrf(vx, x); wrf(vy, y);
+}
+
 /* Hook sites, in config/hooks*.txt order. The lifted code comes from one
  * SPEED2.EXE build, chosen at lift and compile time with NFSU2_EXE_BUILD:
- * the documented build (default, README "Tested Game Build") or f4bb0d99
- * (R36S port, PR #683), whose code sits at other addresses. */
+ * the documented build (default, README "Tested Game Build"), f4bb0d99
+ * (R36S port, PR #683) or 90d73842 (this fork's bundled speed2.exe, see
+ * config/hooks-90d73842.txt) -- each at its own addresses. */
 enum { HUD_A0, HUD_74A, HUD_84, HUD_94, HUD_74B, HUD_1A0, HUD_GLOBAL, MIRROR_R1, MIRROR_L1, MIRROR_L2, MIRROR_R2, BORDER_38, BORDER_48, BORDER_2C, BORDER_3C, RADAR_W30, RADAR_W40, RADAR_H44, RADAR_H54, HUD_HOOK, BLIPS_HOOK, HUD_HOOK2, STOP_SIGN, FMV_QUAD, FOV_SCALE, FOV_CONST1, FOV_CONST2, FOV_CONST3, FRAME_TIME, SITE_COUNT };
 static const uint32_t k_sites[SITE_COUNT] = {
 #if defined(NFSU2_EXE_F4BB0D99)
     0x0051B05Fu, 0x0053655Cu, 0x0053672Du, 0x0053695Du, 0x00536CA5u, 0x0050B099u, 0x0048B5D4u, 0x005CBDCDu, 0x005CBDDDu, 0x005CBDEDu, 0x005CBDFDu, 0x005CBBC9u, 0x005CBBD9u, 0x005CBB5Du, 0x005CBB75u, 0x005C6F3Eu, 0x005C6F4Eu, 0x005C6F56u, 0x005C6F66u, 0x0051AE28u, 0x0051D2E5u, 0x004C6589u, 0x00504D5Fu, 0x005366C2u, 0x005C7C34u, 0x005C7CBEu, 0x005C7CD0u, 0x005C7CF5u, 0x005D2962u,
+#elif defined(NFSU2_EXE_90D73842)
+    0x0051B3CFu, 0x005368DCu, 0x00536AADu, 0x00536CDDu, 0x00537025u, 0x0050B4F9u, 0x0048B644u, 0x005CC10Du, 0x005CC11Du, 0x005CC12Du, 0x005CC13Du, 0x005CBF09u, 0x005CBF19u, 0x005CBE9Du, 0x005CBEB5u, 0x005C727Eu, 0x005C728Eu, 0x005C7296u, 0x005C72A6u, 0x0051B198u, 0x0051D665u, 0x004C6759u, 0x0050516Fu, 0x00536A42u, 0x005C7F74u, 0x005C7FFEu, 0x005C8010u, 0x005C8035u, 0x005D2C22u,
 #else
     0x0051B3CFu, 0x005368CCu, 0x00536A9Du, 0x00536CCDu, 0x00537015u, 0x0050B4F9u, 0x0048B644u, 0x005CC0FDu, 0x005CC10Du, 0x005CC11Du, 0x005CC12Du, 0x005CBEF9u, 0x005CBF09u, 0x005CBE8Du, 0x005CBEA5u, 0x005C726Eu, 0x005C727Eu, 0x005C7286u, 0x005C7296u, 0x0051B198u, 0x0051D655u, 0x004C6759u, 0x0050516Fu, 0x00536A32u, 0x005C7F64u, 0x005C7FEEu, 0x005C8000u, 0x005C8025u, 0x005D2C12u,
 #endif
@@ -156,7 +217,12 @@ static void set_esp_float(uint32_t offset, float value) { wrf(g_esp + offset, va
 void recomp_hook(uint32_t va) {
     int site = 0;
     while (site < SITE_COUNT && k_sites[site] != va) ++site;
-    if (!s_enabled && site != FRAME_TIME) return;
+    /* Outside Widescreen correction, only the FPS-pacing hook and, in "4:3,
+     * minimap moved" mode, the minimap-only nudge (HUD_HOOK/BLIPS_HOOK, see
+     * relocate_minimap_original) still run; every other site leaves the
+     * game's original 4:3 geometry untouched. */
+    if (!s_enabled && site != FRAME_TIME
+        && !(s_minimap_relocate_mode && (site == HUD_HOOK || site == BLIPS_HOOK))) return;
     { static int trace = -1; static uint32_t seen[SITE_COUNT]; static int count;
       if (trace < 0) trace = getenv("NFSU2_WS_TRACE") != NULL;   /* first hit of each site */
       if (trace) { int k; for (k = 0; k < count && seen[k] != va; ++k) ;
@@ -186,9 +252,16 @@ void recomp_hook(uint32_t va) {
     case RADAR_H44: set_esp_float(0x44, s_height * 2.0f); break;
     case RADAR_H54: set_esp_float(0x54, s_height * 2.0f); break;
     /* HudHook: the element position just stored from ecx/edx. */
-    case HUD_HOOK: adjust_mem_pair(g_esp + 0x60, g_esp + 0x64); break;
+    case HUD_HOOK:
+        if (s_enabled) adjust_mem_pair(g_esp + 0x60, g_esp + 0x64);
+        else if (s_minimap_relocate_mode) relocate_mem_pair_minimap_only(g_esp + 0x60, g_esp + 0x64);
+        break;
     /* BlipsHook: radar blips, before `mov [edx], ecx`. */
-    case BLIPS_HOOK: adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20); g_ecx = MEM32(g_ebx + 0x1C); break;
+    case BLIPS_HOOK:
+        if (s_enabled) adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20);
+        else if (s_minimap_relocate_mode) relocate_mem_pair_minimap_only(g_ebx + 0x1C, g_ebx + 0x20);
+        g_ecx = MEM32(g_ebx + 0x1C);
+        break;
     /* HudHook2: ecx = adjusted X of [esi+1C]/[esi+20]. */
     case HUD_HOOK2: {
         float x, y; uint32_t v = g_ecx; memcpy(&x, &v, 4); y = rdf(g_esi + 0x20);

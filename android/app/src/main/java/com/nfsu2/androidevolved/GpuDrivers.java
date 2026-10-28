@@ -11,9 +11,15 @@ import java.util.*;
 
 /**
  * User-provided adrenotools ZIPs: Turnip, PanVK or other Android ARM64 Vulkan drivers (from the MW port).
- * The app ships no driver; an imported one is loaded by adrenotools in the game and probe processes only.
+ * The app ships one Turnip build for Adreno 710/720/722 (BUNDLED_DRIVER); an imported or bundled driver
+ * is loaded by adrenotools in the game and probe processes only.
  */
 final class GpuDrivers {
+    /** The Adreno 710 system driver splits the frame into blocks (codepdbh/nfsu2-recompiled#1677). */
+    static final String BUNDLED_DRIVER = "drivers/Turnip-710-720-722-v4.0.zip";
+    /** GL_RENDERER of the GPUs the bundled driver is selected for on first launch. */
+    static final java.util.regex.Pattern BUNDLED_DRIVER_GPUS = java.util.regex.Pattern.compile("Adreno \\(TM\\) 7(10|20|22)\\b");
+
     static final class Driver {
         final String id, name, library;
         final File directory;
@@ -54,28 +60,38 @@ final class GpuDrivers {
         GameOptions.prefs(context).edit().putString("gpu_driver", id).apply();
     }
     static Driver importZip(Context context, Uri uri) throws Exception {
+        try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("Не удалось открыть ZIP-файл.");
+            return importStream(context, input);
+        }
+    }
+    /** Installs the driver shipped in the APK (assets/drivers, see NOTICE.txt there). */
+    static Driver installBundled(Context context) throws Exception {
+        try (InputStream input = context.getAssets().open(BUNDLED_DRIVER)) {
+            return importStream(context, input);
+        }
+    }
+    private static Driver importStream(Context context, InputStream input) throws Exception {
         File stage = new File(root(context), ".import-" + UUID.randomUUID());
-        if (!stage.mkdirs()) throw new IOException("No se pudo crear la carpeta del driver.");
+        if (!stage.mkdirs()) throw new IOException("Не удалось создать каталог для драйвера.");
         try {
-            InputStream input = context.getContentResolver().openInputStream(uri);
-            if (input == null) throw new IOException("No se pudo abrir el ZIP.");
             DriverArchive.extract(input, stage);
             File packageRoot = findMeta(stage);
-            if (packageRoot == null) throw new IOException("Falta meta.json en el ZIP del driver.");
+            if (packageRoot == null) throw new IOException("В ZIP-архиве драйвера отсутствует meta.json.");
             JSONObject meta = new JSONObject(new String(Files.readAllBytes(new File(packageRoot, "meta.json").toPath()), StandardCharsets.UTF_8));
             String library = meta.getString("libraryName");
-            if (!library.matches("[A-Za-z0-9_.+-]+\\.so")) throw new IOException("libraryName no es válido.");
+            if (!library.matches("[A-Za-z0-9_.+-]+\\.so")) throw new IOException("Некорректный libraryName.");
             if (meta.optInt("minApi", 26) > Build.VERSION.SDK_INT)
-                throw new IOException("Este driver necesita una versión más reciente de Android.");
+                throw new IOException("Этот драйвер требует более новую версию Android.");
             DriverArchive.validateLibrary(new File(packageRoot, library));
             String name = meta.optString("name", library);
-            if (name.trim().isEmpty() || name.length() > 120) throw new IOException("Nombre de driver no válido.");
+            if (name.trim().isEmpty() || name.length() > 120) throw new IOException("Некорректное имя драйвера.");
             // Keep dependencies alongside the main library, including ZIPs with a wrapper directory.
             String relative = "payload";
             File installed = new File(root(context), UUID.randomUUID().toString());
-            if (!installed.mkdirs()) throw new IOException("No se pudo instalar el driver.");
+            if (!installed.mkdirs()) throw new IOException("Не удалось установить драйвер.");
             try {
-                if (!packageRoot.renameTo(new File(installed, relative))) throw new IOException("No se pudo instalar el paquete.");
+                if (!packageRoot.renameTo(new File(installed, relative))) throw new IOException("Не удалось установить пакет.");
                 JSONObject record = new JSONObject().put("name", name).put("libraryName", library).put("folder", relative);
                 Files.write(new File(installed, "driver.json").toPath(), record.toString().getBytes(StandardCharsets.UTF_8));
                 readOnly(new File(installed, relative));
@@ -92,7 +108,7 @@ final class GpuDrivers {
         if (children != null) for (File child : children) {
             File candidate = findMeta(child);
             if (candidate != null) {
-                if (found != null) throw new IOException("Hay varios meta.json; el paquete es ambiguo.");
+                if (found != null) throw new IOException("Найдено несколько meta.json; пакет драйвера неоднозначен.");
                 found = candidate;
             }
         }
@@ -101,15 +117,40 @@ final class GpuDrivers {
     private static void readOnly(File file) throws IOException {
         File[] children = file.listFiles();
         if (children != null) for (File child : children) readOnly(child);
-        else if (!file.setReadOnly()) throw new IOException("No se pudo proteger la biblioteca del driver.");
+        else if (!file.setReadOnly()) throw new IOException("Не удалось задать права доступа для библиотеки драйвера.");
     }
     static void remove(Context context, Driver driver) throws IOException {
         File target = new File(root(context), driver.id);
         if (!target.getCanonicalFile().getParentFile().equals(root(context).getCanonicalFile()))
-            throw new IOException("Ruta de driver no válida.");
+            throw new IOException("Некорректный путь к драйверу.");
         DriverArchive.delete(target);
         if (selectedId(context).equals(driver.id)) select(context, "");
     }
+    static String errorMessage(Context context, Throwable error) {
+        String message = error.getMessage();
+        if (message == null) return error.toString();
+        if (message.equals("No se pudo crear la carpeta del driver.")) return context.getString(R.string.driver_error_create_folder);
+        if (message.equals("No se pudo abrir el ZIP.")) return context.getString(R.string.driver_error_open_zip);
+        if (message.equals("Falta meta.json en el ZIP del driver.")) return context.getString(R.string.driver_error_missing_meta);
+        if (message.equals("libraryName no es válido.")) return context.getString(R.string.driver_error_invalid_library_name);
+        if (message.equals("Este driver necesita una versión más reciente de Android.")) return context.getString(R.string.driver_error_android_too_old);
+        if (message.equals("Nombre de driver no válido.")) return context.getString(R.string.driver_error_invalid_name);
+        if (message.equals("No se pudo instalar el driver.")) return context.getString(R.string.driver_error_install);
+        if (message.equals("No se pudo instalar el paquete.")) return context.getString(R.string.driver_error_install_package);
+        if (message.equals("Hay varios meta.json; el paquete es ambiguo.")) return context.getString(R.string.driver_error_multiple_meta);
+        if (message.equals("No se pudo proteger la biblioteca del driver.")) return context.getString(R.string.driver_error_protect_library);
+        if (message.equals("Ruta de driver no válida.")) return context.getString(R.string.driver_error_invalid_path);
+        if (message.equals("El ZIP contiene demasiados archivos.")) return context.getString(R.string.driver_error_zip_too_many_files);
+        if (message.equals("El ZIP contiene rutas no válidas o repetidas.")) return context.getString(R.string.driver_error_zip_invalid_paths);
+        if (message.equals("No se pudo crear la carpeta.")) return context.getString(R.string.driver_error_create_archive_folder);
+        if (message.equals("El paquete de driver es demasiado grande.")) return context.getString(R.string.driver_error_package_too_large);
+        if (message.equals("El driver debe ser una biblioteca Android ARM64 (.so), no de PC ni de 32 bits.")) return context.getString(R.string.driver_error_not_arm64);
+        if (message.equals("Enlace inesperado en el paquete.")) return context.getString(R.string.driver_error_unexpected_link);
+        String deletePrefix = "No se pudo eliminar ";
+        if (message.startsWith(deletePrefix)) return context.getString(R.string.driver_error_delete, message.substring(deletePrefix.length()));
+        return message;
+    }
+
     /** {hooks dir, temp dir, driver dir, library}; empty driver fields select the system driver. */
     static String[] loaderArguments(Context context) {
         Driver driver = android.os.Process.is64Bit() ? selected(context) : null;

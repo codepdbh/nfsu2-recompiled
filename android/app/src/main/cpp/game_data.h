@@ -14,10 +14,8 @@ inline void checkGameData() {
     unsigned char magic[2]{};
     const size_t read = std::fread(magic, 1, 2, exe);
     std::fclose(exe);
-    struct stat info{};
-    if (read != 2 || magic[0] != 'M' || magic[1] != 'Z' ||
-        stat((root + "/SPEED2.EXE").c_str(), &info) || info.st_size != 4800512)
-        throw std::runtime_error("SPEED2.EXE does not match expected image size/header");
+    if (read != 2 || magic[0] != 'M' || magic[1] != 'Z')
+        throw std::runtime_error("SPEED2.EXE does not have a PE header");
     for (const char* name : {"CARS", "CREDITS", "FRONTEND", "GLOBAL", "LANGUAGES", "MOVIES",
                              "NIS", "SDATA", "SOUND", "SUBTITLES", "TRACKS"}) {
         const auto path = root + "/" + name;
