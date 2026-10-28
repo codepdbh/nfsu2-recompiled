@@ -135,6 +135,12 @@ jobs:
           echo "Downloading upstream ARM64 APK from $ARM64_URL..."
           curl -L "$ARM64_URL" -o upstream_arm64.apk
 
+          echo "Checking for upstream ARM64 native libraries..."
+          if ! unzip -l upstream_arm64.apk 2>/dev/null | grep -q 'lib/arm64-v8a/'; then
+            echo "::error::No ARM64 (arm64-v8a) native libraries found inside $ARM64_URL."
+            exit 1
+          fi
+
           echo "Extracting upstream ARM64 native libraries..."
           rm -rf extracted_libs android/app/src/main/jniLibs/arm64-v8a
           unzip -o upstream_arm64.apk "lib/arm64-v8a/*" -d extracted_libs/
@@ -151,10 +157,11 @@ jobs:
             android/app/src/main/cpp/registry_sync.cpp \
             -o android/app/src/main/jniLibs/arm64-v8a/libregistry_sync.so
 
-          echo "Building translated ARM64 APK with Gradle..."
+          CLEAN_VER="${UPSTREAM_TAG#v}"
+          echo "Building translated ARM64 APK with Gradle (version: $CLEAN_VER)..."
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease -PnfsVersionName="$CLEAN_VER" --no-daemon
           cd ..
 
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
@@ -176,6 +183,7 @@ jobs:
 
           echo "Verifying signed ARM64 APK..."
           $BUILD_TOOLS_DIR/apksigner verify "$OUT_APK"
+          rm -f upstream_arm64.apk
 
       - name: Download Upstream Libraries & Build ARMv7 APK (if present)
         if: steps.release-check.outputs.should_build == 'true' && steps.release-check.outputs.armv7_url != ''
@@ -185,6 +193,13 @@ jobs:
 
           echo "Downloading upstream ARMv7 APK from $ARMV7_URL..."
           curl -L "$ARMV7_URL" -o upstream_armv7.apk
+
+          echo "Checking for upstream ARMv7 native libraries..."
+          if ! unzip -l upstream_armv7.apk 2>/dev/null | grep -q 'lib/armeabi-v7a/'; then
+            echo "::warning::No ARMv7 (armeabi-v7a) native libraries found in upstream APK ($ARMV7_URL). Skipping ARMv7 build."
+            rm -f upstream_armv7.apk
+            exit 0
+          fi
 
           echo "Extracting upstream ARMv7 native libraries..."
           rm -rf extracted_libs android/app/src/main/jniLibs/armeabi-v7a
@@ -202,10 +217,11 @@ jobs:
             android/app/src/main/cpp/registry_sync.cpp \
             -o android/app/src/main/jniLibs/armeabi-v7a/libregistry_sync.so
 
-          echo "Building translated ARMv7 APK with Gradle..."
+          CLEAN_VER="${UPSTREAM_TAG#v}"
+          echo "Building translated ARMv7 APK with Gradle (version: $CLEAN_VER)..."
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease -PnfsAbi=armeabi-v7a --no-daemon
+          ./gradlew assembleRelease -PnfsAbi=armeabi-v7a -PnfsVersionName="$CLEAN_VER" --no-daemon
           cd ..
 
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
@@ -226,11 +242,13 @@ jobs:
 
           echo "Verifying signed ARMv7 APK..."
           $BUILD_TOOLS_DIR/apksigner verify "$OUT_APK"
+          rm -f upstream_armv7.apk
 
       - name: Generate Checksums and Release Notes
         if: steps.release-check.outputs.should_build == 'true'
         run: |
           UPSTREAM_TAG="${{ steps.release-check.outputs.upstream_tag }}"
+          ls -la NFSU2-AndroidEvolved-*-English-*.apk
           sha256sum NFSU2-AndroidEvolved-*-English-*.apk > "NFSU2-${UPSTREAM_TAG}-English-SHA256SUMS.txt"
 
           cat << 'EOF' > release_body.md
