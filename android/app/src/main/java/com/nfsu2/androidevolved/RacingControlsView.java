@@ -70,7 +70,7 @@ final class RacingControlsView extends View {
         super(context); this.keys=keys; this.textInput=textInput;
         layouts=context.getSharedPreferences("touch_layouts_v1",Context.MODE_PRIVATE);
         style=layouts.getString("style","classic");this.configureTilt=configureTilt;this.configureFrameLimit=configureFrameLimit;
-        setContentDescription("Controles del juego");
+        setContentDescription(getContext().getString(R.string.controls_content_description));
         setHapticFeedbackEnabled(true);
         line.setStyle(Paint.Style.STROKE);line.setStrokeCap(Paint.Cap.ROUND);line.setStrokeJoin(Paint.Join.ROUND);
         text.setTextAlign(Paint.Align.CENTER);text.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
@@ -168,12 +168,12 @@ final class RacingControlsView extends View {
         for(Control c:controls)drawControl(canvas,c);
         if(editing) {
             float w=getWidth()/scale;
-            drawToolbarButton(canvas,new RectF(w/2-250,18,w/2-150,58),"RESTABLECER");
+            drawToolbarButton(canvas,new RectF(w/2-250,18,w/2-150,58),getContext().getString(R.string.controls_toolbar_restore));
             drawToolbarButton(canvas,new RectF(w/2-142,18,w/2-102,58),"−");
             drawToolbarButton(canvas,new RectF(w/2-94,18,w/2-54,58),"+");
-            drawToolbarButton(canvas,new RectF(w/2-46,18,w/2+58,58),"GUARDAR");
-            drawToolbarButton(canvas,new RectF(w/2+66,18,w/2+170,58),"CANCELAR");
-            drawToolbarButton(canvas,new RectF(w/2-65,70,w/2+65,106),"OPCIONES");
+            drawToolbarButton(canvas,new RectF(w/2-46,18,w/2+58,58),getContext().getString(R.string.controls_toolbar_save));
+            drawToolbarButton(canvas,new RectF(w/2+66,18,w/2+170,58),getContext().getString(R.string.controls_toolbar_cancel));
+            drawToolbarButton(canvas,new RectF(w/2-65,70,w/2+65,106),getContext().getString(R.string.controls_toolbar_options));
         }
         canvas.restore();
     }
@@ -338,43 +338,43 @@ final class RacingControlsView extends View {
         invalidate();return true;
     }
     private void showOptions() {
-        new AlertDialog.Builder(getContext()).setTitle("Opciones de controles")
-                .setItems(new String[]{"Estilo: clásico / Xbox / PlayStation","Conducción por inclinación","Límite de FPS","Guardar layout con nombre","Cargar layout personalizado"},(dialog,which)->{
+        new AlertDialog.Builder(getContext()).setTitle(R.string.controls_options_title)
+                .setItems(new String[]{getContext().getString(R.string.controls_option_style),getContext().getString(R.string.controls_option_tilt),getContext().getString(R.string.controls_option_fps),getContext().getString(R.string.controls_option_save_layout),getContext().getString(R.string.controls_option_load_layout)},(dialog,which)->{
                     if(which==0)chooseStyle();else if(which==1)configureTilt.run();
                     else if(which==2)configureFrameLimit.run();else if(which==3)saveNamedLayout();else loadNamedLayout();
-                }).setNegativeButton("Cerrar",null).show();
+                }).setNegativeButton(R.string.common_close,null).show();
     }
     private void chooseStyle() {
         String[] ids={"classic","xbox","playstation"};
-        new AlertDialog.Builder(getContext()).setTitle("Estilo de conducción")
-                .setSingleChoiceItems(new String[]{"Clásico · flechas y pedales","Xbox · volante y A / B / X / Y","PlayStation · volante y × / ○ / □ / △"},style.equals("classic")?0:style.equals("xbox")?1:2,(dialog,which)->{
+        new AlertDialog.Builder(getContext()).setTitle(R.string.controls_style_title)
+                .setSingleChoiceItems(new String[]{getContext().getString(R.string.controls_style_classic),getContext().getString(R.string.controls_style_xbox),getContext().getString(R.string.controls_style_playstation)},style.equals("classic")?0:style.equals("xbox")?1:2,(dialog,which)->{
                     style=ids[which];layouts.edit().putString("style",style).apply();
                     layoutControls();dialog.dismiss();
-                }).setNegativeButton("Cancelar",null).show();
+                }).setNegativeButton(R.string.common_cancel,null).show();
     }
     private void saveNamedLayout() {
-        EditText name=new EditText(getContext());name.setSingleLine();name.setHint("Nombre del layout");
+        EditText name=new EditText(getContext());name.setSingleLine();name.setHint(R.string.layout_name_hint);
         name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(24)});
-        AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle("Guardar diseño de "+(racing?"conducción":"menú"))
-                .setView(name).setPositiveButton("Guardar",null).setNegativeButton("Cancelar",null).create();
+        AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle(racing?R.string.layout_save_racing_title:R.string.layout_save_menu_title)
+                .setView(name).setPositiveButton(R.string.common_save,null).setNegativeButton(R.string.common_cancel,null).create();
         dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            String value=name.getText().toString().trim();if(value.isEmpty()) {name.setError("Escribe un nombre");return;}
+            String value=name.getText().toString().trim();if(value.isEmpty()) {name.setError(getContext().getString(R.string.layout_name_required));return;}
             try {
                 JSONObject data=new JSONObject();data.put("style",style);
                 for(Control c:controls) {JSONObject item=new JSONObject();
                     item.put("x",c.area.centerX()/(getWidth()/scale));item.put("y",c.area.centerY()/(getHeight()/scale));
                     item.put("size",c.area.width()/c.original.width());data.put(c.id,item);}
                 layouts.edit().putString("preset."+(racing?"race.":"menu.")+value,data.toString()).apply();
-                saveLayout();Toast.makeText(getContext(),"Layout guardado: "+value,Toast.LENGTH_SHORT).show();dialog.dismiss();
-            }catch(org.json.JSONException exception) {name.setError("No se pudo guardar el layout");}
+                saveLayout();Toast.makeText(getContext(),getContext().getString(R.string.layout_saved,value),Toast.LENGTH_SHORT).show();dialog.dismiss();
+            }catch(org.json.JSONException exception) {name.setError(getContext().getString(R.string.layout_save_failed));}
         }));dialog.show();
     }
     private void loadNamedLayout() {
         String prefix="preset."+(racing?"race.":"menu.");ArrayList<String> names=new ArrayList<>();
         for(String key:layouts.getAll().keySet())if(key.startsWith(prefix))names.add(key.substring(prefix.length()));
         java.util.Collections.sort(names);
-        if(names.isEmpty()) {Toast.makeText(getContext(),"Todavía no hay layouts guardados para este modo",Toast.LENGTH_SHORT).show();return;}
-        new AlertDialog.Builder(getContext()).setTitle("Cargar layout").setItems(names.toArray(new String[0]),(dialog,which)->{
+        if(names.isEmpty()) {Toast.makeText(getContext(),R.string.layout_none_saved,Toast.LENGTH_SHORT).show();return;}
+        new AlertDialog.Builder(getContext()).setTitle(R.string.layout_load_title).setItems(names.toArray(new String[0]),(dialog,which)->{
             try {
                 JSONObject data=new JSONObject(layouts.getString(prefix+names.get(which),"{}"));
                 style=data.getString("style");SharedPreferences.Editor save=layouts.edit().putString("style",style);
@@ -382,8 +382,8 @@ final class RacingControlsView extends View {
                     JSONObject item=data.getJSONObject(id);save.putFloat(id+".x",(float)item.getDouble("x"))
                             .putFloat(id+".y",(float)item.getDouble("y")).putFloat(id+".size",(float)item.getDouble("size"));}
                 save.apply();layoutControls();
-            }catch(org.json.JSONException exception) {Toast.makeText(getContext(),"No se pudo cargar el layout",Toast.LENGTH_SHORT).show();}
-        }).setNegativeButton("Cancelar",null).show();
+            }catch(org.json.JSONException exception) {Toast.makeText(getContext(),R.string.layout_load_failed,Toast.LENGTH_SHORT).show();}
+        }).setNegativeButton(R.string.common_cancel,null).show();
     }
 
     // ---- Input -------------------------------------------------------------------------------------------
