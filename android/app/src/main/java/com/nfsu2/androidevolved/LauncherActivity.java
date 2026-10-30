@@ -198,9 +198,12 @@ public final class LauncherActivity extends Activity {
         for (String folder : new String[] {"GLOBAL", "TRACKS", "CARS", "FRONTEND", "LANGUAGES"})
             if (!(allowed && new File(root, folder).isDirectory())) missing.append(missing.length() == 0 ? "" : ", ").append(folder);
         addCheck(missing.length() == 0 ? "Carpetas del juego" : "Faltan carpetas: " + missing, missing.length() == 0, true);
-        addCheck("HUD panorámico (scripts/…WidescreenFix.dat)",
+        addCheck("HUD panorámico, opcional (scripts/…WidescreenFix.dat)",
                 allowed && new File(root, "scripts/NFSUnderground2.WidescreenFix.dat").isFile(), false);
-        boolean ready = exe && !languages().isEmpty();
+        // Without it the game has no text: JUGAR stays off, so say which file is missing.
+        boolean language = allowed && !languages().isEmpty();
+        if (exe && !language) addCheck("Falta LANGUAGES/<idioma>.bin", false, true);
+        boolean ready = exe && language;
         status.setText(!allowed ? "Permite el acceso a archivos para leer memoria interna/nfsu2."
                 : ready ? "Memoria interna/nfsu2" : "Copia los archivos de tu juego en memoria interna/nfsu2.");
         play.setEnabled(ready);

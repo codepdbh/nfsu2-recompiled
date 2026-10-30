@@ -7,8 +7,8 @@ android {
         applicationId 'com.nfsu2.androidevolved'
         minSdk 29
         targetSdk 35
-        versionCode 26
-        versionName '0.14.11'
+        versionCode 27
+        versionName '0.14.12'
         // -PnfsAbi=armeabi-v7a builds the separate 32-bit APK.
         ndk { abiFilters(project.findProperty('nfsAbi') ?: 'arm64-v8a') }
         externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
