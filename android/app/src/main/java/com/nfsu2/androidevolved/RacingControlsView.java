@@ -98,10 +98,13 @@ final class RacingControlsView extends View {
         lastGameMode=driving;racing=driving;layoutControls();
     }
     boolean isDriving() {return racing&&!editing&&!hiddenByGamepad;}
+    /** The touch controls are out of the way because a physical gamepad is in use. */
+    boolean hiddenByGamepad() {return hiddenByGamepad;}
     /** A physical gamepad is connected: get out of the way until the screen is touched. */
     /** The pad was used while the controls were showing after a touch: get out of the way again. */
     void gamepadUsed() {
-        if(!gamepadConnected||hiddenByGamepad||editing)return;
+        // Fingers on the controls keep them: whatever is touched is in use.
+        if(!gamepadConnected||hiddenByGamepad||editing||!fingers.isEmpty())return;
         releaseAll();hiddenByGamepad=true;invalidate();
     }
     void setGamepadConnected(boolean connected) {
@@ -437,9 +440,10 @@ final class RacingControlsView extends View {
     @Override public boolean onTouchEvent(MotionEvent e) {
         if(editing)return editTouch(e);
         int action=e.getActionMasked(),index=e.getActionIndex(),id=e.getPointerId(index);
+        // A touch brings the controls back and is handled at once, not only shown.
         if(hiddenByGamepad) {
-            if(action==MotionEvent.ACTION_DOWN){hiddenByGamepad=false;invalidate();}
-            return true;
+            if(action!=MotionEvent.ACTION_DOWN)return true;
+            hiddenByGamepad=false;invalidate();
         }
         if(action==MotionEvent.ACTION_CANCEL) { releaseAll(); return true; }
         // A new gesture means no finger is down: anything still held lost its
