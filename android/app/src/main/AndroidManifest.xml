@@ -7,7 +7,7 @@
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="true" />
     <application android:requestLegacyExternalStorage="true" android:label="NFSU2 Android Evolved" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="false">
         <activity android:name=".GameActivity" android:exported="true" android:process=":game"
-            android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="sensorLandscape">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" android:screenOrientation="sensorLandscape">
             <meta-data android:name="android.app.lib_name" android:value="nfsu2_android" />
         </activity>
         <activity android:name=".GpuProbeActivity" android:exported="false"
