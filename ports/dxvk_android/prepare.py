@@ -92,6 +92,48 @@ replace("src/d3d9/d3d9_swapchain.cpp", '    for (uint32_t i = 0; i < m_backBuffe
 # Persistent VkPipelineCache (pipeline_cache.cpp): no recompiling every pipeline each session.
 replace("src/vulkan/vulkan_presenter.cpp", '    m_vkd->vkDestroySwapchainKHR(m_vkd->device(), m_swapchain, nullptr);', '    if (m_swapchain != VK_NULL_HANDLE)\n      m_vkd->vkDestroySwapchainKHR(m_vkd->device(), m_swapchain, nullptr);')
 replace("src/vulkan/vulkan_presenter.cpp", '    m_vki->vkDestroySurfaceKHR(m_vki->instance(), m_surface, nullptr);', '    if (m_surface != VK_NULL_HANDLE)\n      m_vki->vkDestroySurfaceKHR(m_vki->instance(), m_surface, nullptr);\n    m_surface = VK_NULL_HANDLE;')
+# PowerVR BXM (MT6855) faults inside vkCreateGraphicsPipelines: see pipeline_guard.h.
+shutil.copy2(pathlib.Path(__file__).parent / "pipeline_guard.h", args.output / "src/dxvk/dxvk_pipeline_guard.h")
+replace("src/dxvk/dxvk_graphics.cpp", '#include "dxvk_graphics.h"\n', '#include "dxvk_graphics.h"\n#include "dxvk_pipeline_guard.h"\n')
+replace("src/dxvk/dxvk_graphics.cpp", '''    if (m_vkd->vkCreateGraphicsPipelines(m_vkd->device(),
+          m_pipeMgr->m_cache->handle(), 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
+''', '''    VkResult createResult;
+    if (m_pipeMgr->m_device->adapter()->deviceProperties().vendorID == powervr::VendorId) {
+      // Valid for every driver, plainer for this one: no shared cache object, no
+      // null arrays where the states are dynamic, no vertex formats it cannot fetch.
+      std::array<VkViewport, DxvkLimits::MaxNumViewports> anyViewports = { };
+      std::array<VkRect2D,   DxvkLimits::MaxNumViewports> anyScissors  = { };
+      vpInfo.pViewports = anyViewports.data();
+      vpInfo.pScissors  = anyScissors.data();
+      for (uint32_t i = 0; i < state.il.attributeCount(); i++) {
+        VkFormatProperties format = m_pipeMgr->m_device->adapter()->formatProperties(viAttribs[i].format);
+        if (!(format.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT))
+          viAttribs[i].format = VK_FORMAT_R8G8B8A8_SNORM;
+      }
+      createResult = powervr::guarded([&] (int level) {
+        if (level >= 1) {  // No extension structures.
+          rsInfo.pNext = nullptr;
+          viInfo.pNext = nullptr;
+        }
+        if (level >= 2) {  // Only the render targets in use (the render pass declares 8).
+          uint32_t used = 0;
+          for (uint32_t i = 0; i < MaxNumRenderTargets; i++)
+            if (passFormat.color[i].format != VK_FORMAT_UNDEFINED)
+              used = i + 1;
+          cbInfo.attachmentCount = used;
+        }
+        if (level >= 3) {  // Shaders with their default specialization constants.
+          for (auto& stage : stages)
+            stage.pSpecializationInfo = nullptr;
+        }
+        return m_vkd->vkCreateGraphicsPipelines(m_vkd->device(), VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
+      });
+    } else {
+      createResult = m_vkd->vkCreateGraphicsPipelines(m_vkd->device(),
+        m_pipeMgr->m_cache->handle(), 1, &info, nullptr, &pipeline);
+    }
+    if (createResult != VK_SUCCESS) {
+''')
 shutil.copy2(pathlib.Path(__file__).parent / "pipeline_cache.cpp", args.output / "src/dxvk/dxvk_pipecache.cpp")
 shutil.copy2(pathlib.Path(__file__).parent / "pipeline_cache.h", args.output / "src/dxvk/dxvk_pipecache.h")
 replace("src/dxvk/dxvk_pipemanager.cpp", '    m_cache     (new DxvkPipelineCache(device->vkd())) {', '    m_cache     (new DxvkPipelineCache(device->vkd(), device->properties().core.properties)) {')
