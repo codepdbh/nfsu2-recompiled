@@ -2,6 +2,44 @@ std::string guestWorkingDirectory="C:\\nfsu2";
 void logicalDrives(){ret(4,0);}
 void driveType(){auto path=lower(guestString(arg(0)));ret(path.empty()||path.rfind("c:",0)==0?3:1,1);}
 uint32_t fileError(){switch(errno){case ENOENT:return 2;case EACCES:case EPERM:return 5;case EEXIST:return 80;case ENOSPC:return 112;case EBADF:return 6;default:return 1;}}
+// Resolves a relative game path below base one component at a time, ignoring
+// case as Windows does; components that do not exist are appended as given.
+std::filesystem::path resolveIgnoringCase(std::filesystem::path base,const std::filesystem::path& relative){
+    for(const auto& part:relative){if(part==".")continue;std::error_code error;bool found=false;
+        for(auto& entry:std::filesystem::directory_iterator(base,error))if(lower(entry.path().filename().string())==lower(part.string())){base=entry.path();found=true;break;}
+        if(!found)base/=part;
+    }
+    return base;
+}
+// Localized files for the launcher language, without replacing the originals:
+// MOVIES/<name>.vp6 opens MOVIES/<name>_sp.vp6 (European discs' naming) and sdat.viv
+// (one language's voices) opens sdat_sp.viv in the same folder when the language has
+// such a file. THX_logo_fr shows the game already knows this scheme.
+std::vector<std::string> languageSuffixes(){
+    std::string language=lower(guestLanguage.substr(0,guestLanguage.find(' ')));
+    if(language=="spanish")return {"_sp","_es"};
+    if(language=="french")return {"_fr"};
+    if(language=="german")return {"_gr","_ge","_de"};
+    if(language=="italian")return {"_it"};
+    if(language=="dutch")return {"_du","_nl"};
+    if(language=="swedish")return {"_sw","_sv"};
+    if(language=="danish")return {"_da","_dk"};
+    return {};
+}
+std::filesystem::path localizedGamePath(const std::filesystem::path& relative){
+    std::error_code error;
+    auto base=resolveIgnoringCase(std::filesystem::path(hostGameRoot),relative);
+    auto parent=lower(relative.parent_path().filename().string()),file=lower(relative.filename().string());
+    // Movies and the speech archive (sdat.viv holds one language's voices) have
+    // per-language copies on European discs: name_sp.vp6, sdat_sp.viv next to the original.
+    if((parent=="movies"&&lower(relative.extension().string())==".vp6")||file=="sdat.viv")
+        for(const auto& suffix:languageSuffixes()){
+            auto name=relative.stem().string()+suffix+relative.extension().string();
+            auto candidate=resolveIgnoringCase(base.parent_path(),std::filesystem::path(name));
+            if(std::filesystem::is_regular_file(candidate,error))return candidate;
+        }
+    return base;
+}
 std::filesystem::path gamePath(std::string guest){
     std::replace(guest.begin(),guest.end(),'\\','/');auto normalized=lower(guest);
     if(normalized=="c:/nfsu2")guest.clear();
@@ -9,11 +47,7 @@ std::filesystem::path gamePath(std::string guest){
     else if(guest.find(':')!=std::string::npos||guest.rfind("//",0)==0)throw GuestStop("Unsupported guest path: "+guest);
     else {if(!guest.empty()&&guest.front()=='/')guest.erase(0,1);else{auto current=guestWorkingDirectory.substr(8);std::replace(current.begin(),current.end(),'\\','/');if(!current.empty())guest=current+"/"+guest;}}
     auto relative=std::filesystem::path(guest).lexically_normal();for(const auto& part:relative)if(part=="..")throw GuestStop("Guest path leaves nfsu2: "+guest);
-    auto result=std::filesystem::path(hostGameRoot);
-    for(const auto& part:relative){if(part==".")continue;std::error_code error;bool found=false;
-        for(auto& entry:std::filesystem::directory_iterator(result,error))if(lower(entry.path().filename().string())==lower(part.string())){result=entry.path();found=true;break;}
-        if(!found)result/=part;
-    }
+    auto result=localizedGamePath(relative);
     auto root=std::filesystem::weakly_canonical(hostGameRoot);auto resolved=std::filesystem::weakly_canonical(result);
     auto check=resolved.lexically_relative(root);for(const auto& part:check)if(part=="..")throw GuestStop("Guest symlink leaves data root");return resolved;
 }

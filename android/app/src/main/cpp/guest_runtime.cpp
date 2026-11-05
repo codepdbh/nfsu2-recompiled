@@ -57,6 +57,9 @@ uint32_t g_icall_trace[ICALL_TRACE_SIZE], g_icall_from[ICALL_TRACE_SIZE];
 uint32_t g_icall_trace_idx, g_icall_count;
 }
 
+// Defined after the anonymous namespace; called from d3dDispatch after Present.
+void refreshGuestHud();
+void updateGuestMenuScreen();
 namespace {
 std::atomic<uint32_t> displayWidth{1280},displayHeight{720};
 std::atomic<uint32_t> renderWidth{0},renderHeight{0};
@@ -164,6 +167,7 @@ constexpr uint32_t timerTestAddress=0x7b000010u;
 bool generatedTestActive=false;unsigned generatedTestCalls=0;
 constexpr uint32_t generatedTestTarget=0x7b000020u;
 uint32_t read32(uint32_t va);
+void write32(uint32_t va,uint32_t v);
 // Stall diagnostics: where each guest thread last handed the machine over and
 // what it was waiting for, dumped when the game stops presenting frames.
 struct GuestThreadTrace {
@@ -227,6 +231,24 @@ void yieldGuestMachine(unsigned milliseconds=0,std::chrono::steady_clock::time_p
 thread_local bool renderThread=false;
 // Render-thread slice handovers and the time spent getting the machine back.
 uint64_t renderYields=0;std::chrono::nanoseconds renderWait{};
+// On-screen FPS counter (launcher option): presented frames over ~0.5 s windows.
+std::atomic<float> overlayFps{0.f},overlayFrameMs{0.f};
+// Game SKU (0x864F24): 0 = North America (SLUS), 1 = PAL Europe (SLES). The game
+// never writes it and the documented SPEED2.EXE leaves it 0, so it always loads
+// GLOBAL\GLOBALTEXTURESNA.BIN and US-only content. -1 leaves the game's value.
+constexpr uint32_t guestSkuAddress=0x00864F24u;
+std::atomic<int> forcedGuestRegion{-1};
+void applyGuestRegion(){
+#if defined(NFSU2_EXE_F4BB0D99)
+    return;  // the address belongs to the documented SPEED2.EXE build
+#endif
+    int forced=forcedGuestRegion.load(std::memory_order_relaxed);if(forced<0)return;
+    uint32_t current=read32(guestSkuAddress);if(current==uint32_t(forced))return;
+    static bool logged=false;
+    if(!logged){logged=true;NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Game region (SKU) %u -> %d",current,forced);}
+    else NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Game region was changed by the game to %u; forcing %d again",current,forced);
+    write32(guestSkuAddress,uint32_t(forced));
+}
 void checkGuestProgress() {
     while(guestPaused.load()&&!stopRequested.load())yieldGuestMachine(20);
     if(stopRequested.load())throw GuestStop("Guest execution cancelled");
@@ -343,7 +365,8 @@ void d3dDispatch(){
     static std::array<std::chrono::nanoseconds,4096> methodTime{};
     if(timed){auto spent=std::chrono::steady_clock::now()-bridgeStart;bridgeTime+=token==0x7e002110u?spent:spent*64;presentTime+=token==0x7e002110u?spent:std::chrono::nanoseconds{};
         methodTime[((token-0x7e000000u)/16u)&4095u]+=token==0x7e002110u?spent:spent*64;}
-    if(token==0x7e002110u){nfs_widescreen_apply_frame_rate();lastPresentMs=steadyMs();startStallWatch();}
+    if(token==0x7e002110u){nfs_widescreen_apply_frame_rate();applyGuestRegion();lastPresentMs=steadyMs();startStallWatch();}
+    if(token==0x7e002110u){refreshGuestHud();updateGuestMenuScreen();}
     if(token==0x7e002110u&&result==0){
         static FramePacer pacer;
         auto now=std::chrono::steady_clock::now();
@@ -353,6 +376,9 @@ void d3dDispatch(){
         renderThread=true;
         if(deadline>now)yieldGuestMachine(0,deadline);
         else if(machine.hasWaiters()){auto before=std::chrono::steady_clock::now();yieldGuestMachine();++renderYields;renderWait+=std::chrono::steady_clock::now()-before;}
+        {static unsigned overlayFrames=0;static auto overlaySince=std::chrono::steady_clock::now();
+            ++overlayFrames;auto overlayNow=std::chrono::steady_clock::now();double window=std::chrono::duration<double>(overlayNow-overlaySince).count();
+            if(window>=0.5){overlayFps=float(overlayFrames/window);overlayFrameMs=float(window*1000.0/overlayFrames);overlayFrames=0;overlaySince=overlayNow;}}
         static unsigned frames=0;static auto since=std::chrono::steady_clock::now();
         if(++frames==120){serviceGuestSound();auto now=std::chrono::steady_clock::now();double seconds=std::chrono::duration<double>(now-since).count();
             NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Guest D3D9 presentation %.1f FPS over %.2f seconds; bridge ~%.2f ms/frame (present %.2f), %.0f calls/frame",
@@ -887,6 +913,7 @@ std::string connectGuestRuntime(const char* executable) {
         }
         // Restore a clean CPU state before executing the real CRT entry.
         fresh.load();
+        applyGuestRegion();  // before the game reads it (GLOBAL textures, ads, product codes)
         NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Entering actual lifted CRT entry %08x",entry);
         uint32_t result=callGuest(entry,{});
         joinGuestThreads(guard);machineLease=nullptr;shutdownGuestSound();
@@ -938,6 +965,64 @@ void setGuestResolution(unsigned width,unsigned height){
 #endif
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Selected render resolution %ux%u",width,height);
 }
+// Moving the minimap or tachometer at run time (gamepad/touch): the game draws
+// each HUD element from cached, already transformed geometry. 0x0050C7E0 drops
+// that cache for every element of every interface package (this = the FE
+// engine at [0x008384C4]); the game itself calls it when the language changes
+// (0x00512360). The elements are rebuilt on the next frame, through the
+// widescreen HUD hooks that add the new offsets. Called after Present, on the
+// game thread, between frames.
+void refreshGuestHud(){
+#if !defined(NFSU2_EXE_F4BB0D99)
+    if(!nfs_widescreen_take_relayout())return;
+    uint32_t engine=read32(0x008384C4u);if(!engine)return;
+    uint32_t ecx=g_ecx;g_ecx=engine;
+    try{callGuest(0x0050C7E0u,{});}catch(...){g_ecx=ecx;throw;}
+    g_ecx=ecx;
+#endif
+}
+// Menu screens for the console gamepad layout (documented SPEED2.EXE only).
+// The FE engine is [[0x008384C4]+8]; 0x00519E50 (this = engine+0xDC, args
+// package name and first open package; ret 8) finds an open package, as
+// 0x0052CF60 (IsPackageOpen) does. 0x0051CDC0(message, object, target, package)
+// queues an interface message, as the pad code at 0x0054D4B0 does for its
+// buttons (target 0xFFFFFFFD: the package's screen).
+std::atomic<int> menuScreen{0};
+std::atomic<bool> button1Requested{false};
+int guestMenuScreen(){return menuScreen.load(std::memory_order_relaxed);}
+void requestGuestButton1(){button1Requested=true;}
+uint32_t openGuestPackage(uint32_t name){
+    uint32_t root=read32(0x008384C4u);if(!root)return 0;
+    uint32_t engine=read32(root+8);if(!engine)return 0;
+    uint32_t list=engine+0xDC,first=read32(list+8);if(!first)return 0;
+    uint32_t ecx=g_ecx;g_ecx=list;uint32_t package;
+    try{package=callGuest(0x00519E50u,{name,first});}catch(...){g_ecx=ecx;throw;}
+    g_ecx=ecx;return package;
+}
+void updateGuestMenuScreen(){
+#if !defined(NFSU2_EXE_F4BB0D99)
+    if(guestDrivingControls()){menuScreen=0;button1Requested=false;return;}
+    // Confirmation dialogs (GPS, delete message, ...) shown over the screens below.
+    static constexpr uint32_t dialogs[]={
+        0x0078FD7Cu,0x00790038u,0x0078F2F8u,0x0078FA24u,0x00790D74u,  // GenericDialog[_LARGE/_MED/_SMALL/_Small].fng
+        0x00799E74u,0x00799E54u,0x00799E34u,0x00799E14u,              // GenericDialog_Animate_*.fng, _ThreeButton.fng
+        0x00799DF8u,0x00799DDCu,0x00795484u,                          // IG_GenericDialog_LARGE/_MED/_SMALL.fng
+        0x00795000u,0x007A6470u,0x00799DB0u};                         // UI_InGameDialog, MU_UG_InGameDialogBox, GenericerDialog
+    for(uint32_t dialog:dialogs)if(openGuestPackage(dialog)){menuScreen=0;button1Requested=false;return;}
+    constexpr uint32_t worldMap=0x00799EA4u,smsMessage=0x0078F7C8u,mailbox=0x0078F7E4u;
+    // "UI_InGame_WorldMap.fng", "UI_EngageMessageDialog.fng", "UI_SMS_Mailbox.fng"
+    uint32_t package=0;int screen=0;
+    if((package=openGuestPackage(worldMap)))screen=1;
+    else if((package=openGuestPackage(smsMessage)))screen=2;
+    else if((package=openGuestPackage(mailbox)))screen=3;
+    menuScreen=screen;
+    if(button1Requested.exchange(false)&&package&&(screen==1||screen==3))
+        callGuest(0x0051CDC0u,{0xC519BFC0u/*PAD_BUTTON1*/,0u,0xFFFFFFFDu,package},16);
+#endif
+}
+void setGuestRegion(int region){forcedGuestRegion=region<0||region>1?-1:region;}
+float guestOverlayFps(){return overlayFps.load();}
+float guestOverlayFrameMs(){return overlayFrameMs.load();}
 void setGuestFrameLimit(unsigned framesPerSecond){
     frameLimit=(framesPerSecond>=30&&framesPerSecond<=240)?framesPerSecond:0;
     // The game paces itself to 1/60 s; let it run at the cap (uncapped: the 120 Hz display).

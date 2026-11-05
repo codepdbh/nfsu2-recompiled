@@ -26,3 +26,14 @@ void typeGuestText(const std::vector<uint32_t>& characters);
 void setGuestLanguage(const char* language);
 void setGuestResolution(unsigned width,unsigned height);
 void setGuestFrameLimit(unsigned framesPerSecond);
+// Launcher option, before the guest boots: -1 keeps the game's region, 0 North America, 1 Europe.
+void setGuestRegion(int region);
+// Presented frames per second and average frame time over the last ~0.5 s (0 before the first frame).
+float guestOverlayFps();
+float guestOverlayFrameMs();
+// Console gamepad layout: which menu screen the game shows (0 other or a dialog
+// on top, 1 in-game world map, 2 SMS message, 3 SMS mailbox), refreshed every
+// frame; and a request to send PAD_BUTTON1 to that screen on the next frame
+// (map: set the GPS; mailbox: delete the message).
+int guestMenuScreen();
+void requestGuestButton1();

@@ -203,13 +203,25 @@ public final class LauncherActivity extends Activity {
         // Without it the game has no text: JUGAR stays off, so say which file is missing.
         boolean language = allowed && !languages().isEmpty();
         if (exe && !language) addCheck("Falta LANGUAGES/<idioma>.bin", false, true);
-        boolean ready = exe && language;
+        // The European region loads GLOBAL/GLOBALTEXTURESROW.BIN instead of GLOBALTEXTURESNA.BIN; only
+        // European discs install it, and without it the game cannot load its global textures.
+        boolean region = !"eu".equals(GameOptions.get(this, GameOptions.REGION))
+                || (allowed && fileIgnoringCase(new File(root, "GLOBAL"), "GLOBALTEXTURESROW.BIN"));
+        if (!region) addCheck("Región Europa: falta GLOBAL/GLOBALTEXTURESROW.BIN (de un disco europeo)", false, true);
+        boolean ready = exe && language && region;
         status.setText(!allowed ? "Permite el acceso a archivos para leer memoria interna/nfsu2."
                 : ready ? "Memoria interna/nfsu2" : "Copia los archivos de tu juego en memoria interna/nfsu2.");
         play.setEnabled(ready);
         play.setAlpha(ready ? 1f : .45f);
         access.setVisibility(allowed ? View.GONE : View.VISIBLE);
         refreshOptions();
+    }
+
+    /** The game resolves names without case (gamePath); Android storage does not. */
+    private static boolean fileIgnoringCase(File directory, String name) {
+        String[] names = directory.list();
+        if (names != null) for (String entry : names) if (entry.equalsIgnoreCase(name)) return true;
+        return false;
     }
 
     private void refreshOptions() {
@@ -257,7 +269,7 @@ public final class LauncherActivity extends Activity {
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("Idioma")
                 .setSingleChoiceItems(names, checked, (dialog, which) -> {
                     GameOptions.prefs(this).edit().putString(GameOptions.LANGUAGE, found.get(which)[1]).apply();
-                    dialog.dismiss(); refreshOptions();
+                    dialog.dismiss(); refresh();
                 }).setNegativeButton("Cancelar", null).show();
     }
 
@@ -464,9 +476,13 @@ public final class LauncherActivity extends Activity {
                 .putExtra("frameCap", Integer.parseInt(GameOptions.get(this, GameOptions.FPS)))
                 .putExtra("widescreen", GameOptions.get(this, GameOptions.WIDESCREEN).equals("on"))
                 .putExtra("minimapTop", GameOptions.get(this, GameOptions.MINIMAP).equals("top"))
+                .putExtra("tachometer", GameOptions.tachometerPosition(this))
+                .putExtra("consolePad", GameOptions.get(this, GameOptions.PAD_LAYOUT).equals("console"))
                 .putExtra("backBuffers", Integer.parseInt(GameOptions.get(this, GameOptions.LATENCY)))
                 .putExtra("cpuTextures", GameOptions.get(this, GameOptions.TEXTURES).equals("cpu"))
                 .putExtra("onlineServer", GameOptions.onlineServer(this))
+                .putExtra("region", GameOptions.regionCode(this))
+                .putExtra("fpsOverlay", GameOptions.get(this, GameOptions.FPS_OVERLAY))
                 .putExtra("driverLoader", loader));
     }
 

@@ -282,12 +282,16 @@ static int32_t onInput(android_app*,AInputEvent* event){
     gamepad.setKeyEmulation(!guestGamepadInUse());
     if(type==AINPUT_EVENT_TYPE_MOTION){
         if(!acceptedGamepad(event))return 0;
+        gamepad.setScreen(guestMenuScreen());
         bool handled=gamepad.motion(event,guestDrivingControls(),setPadKey);if(handled){notePadUse(event);publishPad();}return handled?1:0;
     }
     if(type!=AINPUT_EVENT_TYPE_KEY)return 0;
     // Any key of an accepted pad, whatever source it reports (pads in keyboard
     // mode send KEYBOARD); keys it does not map fall through to the table below.
-    if(acceptedGamepad(event)&&gamepad.key(event,guestDrivingControls(),setPadKey)){notePadUse(event);publishPad();return 1;}
+    gamepad.setScreen(guestMenuScreen());
+    if(acceptedGamepad(event)&&gamepad.key(event,guestDrivingControls(),setPadKey)){
+        if(gamepad.takeButton1Request())requestGuestButton1();
+        notePadUse(event);publishPad();return 1;}
     int32_t key=AKeyEvent_getKeyCode(event);unsigned scan=0;
     switch(key){
     case AKEYCODE_DPAD_UP:scan=0xc8;break;case AKEYCODE_DPAD_DOWN:scan=0xd0;break;
@@ -331,6 +335,10 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nat
 }
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeResolution(JNIEnv*,jclass,jint width,jint height){setGuestResolution(unsigned(width),unsigned(height));}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeFrameLimit(JNIEnv*,jclass,jint cap){setGuestFrameLimit(unsigned(cap));}
+// Launcher "Controles del mando": false = the port's layout, true = console layout.
+extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeGamepadLayout(JNIEnv*,jclass,jboolean console){
+    gamepad.setConsoleLayout(console==JNI_TRUE);
+}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeGamepadConnected(JNIEnv*,jclass,jboolean connected){setGuestPadConnected(connected==JNI_TRUE);}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeGamepadDevices(JNIEnv* env,jclass,jintArray ids){
     std::vector<int32_t> devices;
@@ -345,10 +353,21 @@ extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nat
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeOnlineServer(JNIEnv* env,jclass,jstring host){
     const char* text=env->GetStringUTFChars(host,nullptr);setGuestOnlineServer(text?text:"");env->ReleaseStringUTFChars(host,text);
 }
+// Launcher "Cuentarrevoluciones": 0 original (bottom right), 1 raised, 2 mid-screen.
+extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeTachometerPosition(JNIEnv*,jclass,jint position){
+    nfs_widescreen_set_tachometer_offset(position==2?-180.0f:position==1?-70.0f:0.0f);
+}
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeMinimapTop(JNIEnv*,jclass,jboolean top){nfs_widescreen_set_minimap_offset(top==JNI_TRUE?-230.0f:0.0f);}
 static bool compatCpuTextures=false;static unsigned compatBackBuffers=2;
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeBackBuffers(JNIEnv*,jclass,jint count){
     compatBackBuffers=unsigned(count);setD3D9Compatibility(compatCpuTextures,compatBackBuffers);
+}
+extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeRegion(JNIEnv*,jclass,jint region){
+    setGuestRegion(int(region));
+}
+extern "C" JNIEXPORT jfloatArray JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeFrameStats(JNIEnv* env,jclass){
+    jfloat values[2]={guestOverlayFps(),guestOverlayFrameMs()};
+    jfloatArray result=env->NewFloatArray(2);if(result)env->SetFloatArrayRegion(result,0,2,values);return result;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_nfsu2_androidevolved_GameActivity_nativeCpuTextures(JNIEnv*,jclass,jboolean enabled){
     compatCpuTextures=enabled==JNI_TRUE;setD3D9Compatibility(compatCpuTextures,compatBackBuffers);

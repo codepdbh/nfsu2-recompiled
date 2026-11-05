@@ -34,6 +34,9 @@ static const int s_disable_cutscene_borders = 1;
 /* Extra vertical move of the minimap (mobile layout: top-left instead of
  * bottom-left, clear of the thumbs). 0 keeps the mod's position. */
 static float s_minimap_dy = 0.0f;
+/* Extra vertical move of the tachometer cluster (launcher option, negative = up):
+ * on phones it sits under the right thumb. 0 keeps the mod's position. */
+static float s_tachometer_dy = 0.0f;
 /* Game frame time for FPSLimit (0 = the game's own 1/60 s). */
 static float s_frame_time = 0.0f;
 /* FOV multipliers chosen per view at 0x5C7F64 and applied at its three
@@ -63,8 +66,19 @@ static int is_minimap(const hud_entry* e) {
     return (x == -223 && (y == 70 || y == 71 || y == 142 || y == 143)) || (x == -143 && y == 196);
 }
 
+/* Tachometer_Pos_1/2/5/6/7/8 and N2O_Pos_1/2 in the mod's .dat: the gauge cluster
+ * at the bottom right (anchored with the right-side offset 119). */
+static int is_tachometer(const hud_entry* e) {
+    static const int k[][2] = {{142, 195}, {199, 177}, {205, 181}, {168, 202}, {207, 175}, {160, 206},
+                               {220, 151}, {253, 117}};
+    int x = (int)e->pos_x, y = (int)e->pos_y;
+    for (unsigned i = 0; i < sizeof k / sizeof k[0]; i++) if (k[i][0] == x && k[i][1] == y) return 1;
+    return 0;
+}
+
 /* The mod's WidescreenHud(): move a known HUD element by its .dat offset. */
-static void widescreen_hud(float* x, float* y) {
+/* Returns 2 for a minimap entry, 1 for another known entry, 0 otherwise. */
+static int widescreen_hud(float* x, float* y) {
     const float base_offset = (480.0f * (16.0f / 9.0f) - 640.0f) / 2.0f;
     int ix = (int)floorf(*x), iy = (int)floorf(*y);
     for (unsigned i = 0; i < s_hud_count; i++) {
@@ -73,15 +87,53 @@ static void widescreen_hud(float* x, float* y) {
         if (e->offset_x >= 0.0f) *x += s_hud_offset + (e->offset_x - base_offset);
         else *x -= s_hud_offset - (e->offset_x + base_offset);
         *y += e->offset_y;
-        if (is_minimap(e)) *y += s_minimap_dy;
-        return;
+        if (is_tachometer(e)) *y += s_tachometer_dy;
+        if (is_minimap(e)) { *y += s_minimap_dy; return 2; }
+        return 1;
     }
+    return 0;
 }
 
 static void adjust_mem_pair(uint32_t vx, uint32_t vy) {
     float x = rdf(vx), y = rdf(vy);
     widescreen_hud(&x, &y);
     wrf(vx, x); wrf(vy, y);
+}
+
+/* BlipsHook rewrites the position inside the element itself (the radar map
+ * and its overlays, e.g. 4:3 -223,142 becomes -439,142 for good), so the next
+ * frame no longer sees a .dat anchor and a later minimap offset would not
+ * reach it, while the frame (HudHook, stack copy) does move. Each minimap
+ * element moved here is remembered with the offset baked into it; when its
+ * position is still exactly what was written, the difference to the current
+ * offset is applied. A recycled element holds another position and is left
+ * alone. */
+static struct { uint32_t element; float x, y, dy; } s_baked[32];
+static unsigned s_baked_next;
+static void adjust_blip(uint32_t element) {
+    const uint32_t vx = element + 0x1C, vy = element + 0x20;
+    float x = rdf(vx), y = rdf(vy);
+    unsigned i;
+    int kind = widescreen_hud(&x, &y);
+    if (kind) {
+        wrf(vx, x); wrf(vy, y);
+        for (i = 0; i < sizeof s_baked / sizeof s_baked[0]; i++)
+            if (s_baked[i].element == element) break;
+        if (kind != 2) { if (i < sizeof s_baked / sizeof s_baked[0]) s_baked[i].element = 0; return; }
+        if (i == sizeof s_baked / sizeof s_baked[0]) i = s_baked_next++ % (sizeof s_baked / sizeof s_baked[0]);
+        s_baked[i].element = element; s_baked[i].x = x; s_baked[i].y = y; s_baked[i].dy = s_minimap_dy;
+        return;
+    }
+    for (i = 0; i < sizeof s_baked / sizeof s_baked[0]; i++) {
+        if (s_baked[i].element != element) continue;
+        if (s_baked[i].x != x || s_baked[i].y != y) { s_baked[i].element = 0; return; }
+        if (s_baked[i].dy != s_minimap_dy) {
+            y += s_minimap_dy - s_baked[i].dy;
+            wrf(vy, y);
+            s_baked[i].y = y; s_baked[i].dy = s_minimap_dy;
+        }
+        return;
+    }
 }
 
 /* Hook sites, in config/hooks*.txt order. The lifted code comes from one
@@ -129,7 +181,13 @@ void nfs_widescreen_set_resolution(unsigned width, unsigned height) {
 
 int nfs_widescreen_hud_entries(void) { return (int)s_hud_count; }
 
-void nfs_widescreen_set_minimap_offset(float dy) { s_minimap_dy = dy; }
+/* The game keeps each HUD element's transformed geometry and rebuilds it only
+ * when the element changes, so a new offset needs the HUD rebuilt (see
+ * nfs_widescreen_take_relayout). Set from the Android UI thread. */
+static volatile int s_relayout;
+void nfs_widescreen_set_minimap_offset(float dy) { if (dy != s_minimap_dy) { s_minimap_dy = dy; s_relayout = 1; } }
+void nfs_widescreen_set_tachometer_offset(float dy) { if (dy != s_tachometer_dy) { s_tachometer_dy = dy; s_relayout = 1; } }
+int nfs_widescreen_take_relayout(void) { int pending = s_relayout; s_relayout = 0; return pending; }
 
 /* FPSLimit (the mod's Misc.ixx): the game paces its main loop with a fixed
  * frame time of 1/60 s. SetFrameRate (0x576CB0) stores 1/fps in 0x865558 and
@@ -188,7 +246,7 @@ void recomp_hook(uint32_t va) {
     /* HudHook: the element position just stored from ecx/edx. */
     case HUD_HOOK: adjust_mem_pair(g_esp + 0x60, g_esp + 0x64); break;
     /* BlipsHook: radar blips, before `mov [edx], ecx`. */
-    case BLIPS_HOOK: adjust_mem_pair(g_ebx + 0x1C, g_ebx + 0x20); g_ecx = MEM32(g_ebx + 0x1C); break;
+    case BLIPS_HOOK: adjust_blip(g_ebx); g_ecx = MEM32(g_ebx + 0x1C); break;
     /* HudHook2: ecx = adjusted X of [esi+1C]/[esi+20]. */
     case HUD_HOOK2: {
         float x, y; uint32_t v = g_ecx; memcpy(&x, &v, 4); y = rdf(g_esi + 0x20);
