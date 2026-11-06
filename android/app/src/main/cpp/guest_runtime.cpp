@@ -16,6 +16,7 @@
 #include <array>
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <fstream>
@@ -23,6 +24,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cstring>
 #include <cctype>
 #include <chrono>
 #include <ctime>
@@ -629,76 +631,189 @@ void testGuestCriticalSections(){
 }
 uint32_t dynamicThunkAddress{};
 void generatedTestCallback(){++generatedTestCalls;ret(read32(arg(0)),0);}
-void dynamicThunk(){
-    uint32_t start=dynamicThunkAddress,pc=start;
-    if(!memory->readable(start,5)||read32(start)!=0x24748b56u||*static_cast<uint8_t*>(ptr(start+4,1))!=8)
-        throw GuestStop("Invalid generated callback at "+hex(start));
-    uint32_t originalEsi=g_esi,esi=0,eax=g_eax,ecx=g_ecx,originalEsp=g_esp;
-    unsigned saved=0,arguments=0,totalArguments=0;bool pending=false,stackCleared=false,popped=false,compared=false;int comparison=0;
-    auto byte=[&](){return *static_cast<const uint8_t*>(ptr(pc++,1));};
-    auto word=[&](){uint32_t value=read32(pc);pc+=4;return value;};
-    for(unsigned steps=0;steps<4096&&pc-start<65536;++steps){
-        uint32_t instruction=pc;uint8_t op=byte();
-        if(op==0x56){if(!saved){saved=1;}else{++arguments;++totalArguments;pending=true;stackCleared=false;}continue;}
-        if(op==0xe8&&pending){int32_t delta=static_cast<int32_t>(word());uint32_t target=pc+delta;
+
+namespace {
+// dynamicThunk interprets a small, fixed instruction set the game's own audio mix
+// graph compiler emits (push esi; call f; mov [esi+n],eax; ..., about 100 blocks per
+// mix) plus a short arithmetic tail. Re-parsing that from guest memory on every one of
+// the ~100 calls a mix made per invocation, every time the mix plays, was ~10% of the
+// audio thread (see docs/AUDIO_FRAME_PACING.md) -- which holds the guest machine the
+// render thread waits on. An address is decoded into this graph once; later calls walk
+// the graph directly (no byte reads besides the integrity check below, no opcode
+// dispatch, no recomp_lookup per call site). Branches stay data-driven: only *decoding*
+// is cached, Jcc is still evaluated from live registers on every replay, so the existing
+// self-test (testGeneratedCallbacks, same start address, three different inputs
+// including both sides of its min/max branch) still exercises this correctly.
+struct ThunkOp {
+    enum Kind : uint8_t { Skip, Call, AddEsi, Store, ReloadEsi, LoadEaxOff, LoadEcxOff,
+        EaxFromEcx, Cmp, Imul, Jcc, ZeroByte, AddOff, SubOff, Ret } kind;
+    uint32_t a=0;              // offset/delta (most kinds), or the call target VA (Call)
+    uint32_t next=0;           // fallthrough pc; unused for Ret
+    uint32_t taken=0;          // Jcc only: pc when the branch is taken
+    uint8_t cc=0;              // Jcc only: the 0x7c..0x7f opcode byte
+    recomp_func_t fn=nullptr;  // Call only: resolved once, reused on every replay
+};
+struct CachedThunk { std::vector<uint8_t> bytes; std::unordered_map<uint32_t,ThunkOp> program; };
+std::unordered_map<uint32_t,CachedThunk> g_thunkCache;
+
+// Decode-time-only bookkeeping: which opcodes are legal next (this is how the original
+// interpreter validated the generated code's shape). None of it survives into replay.
+struct ThunkParse { unsigned saved=0,arguments=0,totalArguments=0; bool pending=false,stackCleared=false,popped=false,compared=false; };
+
+void thunkDecodeFault(uint32_t start,uint32_t at){
+    if(memory->readable(at,32)){
+        const auto* raw=static_cast<const uint8_t*>(ptr(at,32));std::ostringstream dump;
+        for(unsigned i=0;i<32;++i)dump<<std::hex<<std::setw(2)<<std::setfill('0')<<unsigned(raw[i]);
+        NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Generated callback start=%08x offset=%03x bytes=%s",start,at-start,dump.str().c_str());
+    }
+    throw GuestStop("Generated callback opcode pending at "+hex(at));
+}
+
+// Decodes every instruction reachable from `pc` (the starting state's own run, plus
+// whatever a Jcc it meets branches to) until each path rejoins an already-decoded
+// instruction or returns. A guard bounds total instructions decoded across every call,
+// mirroring the original interpreter's own per-call step budget.
+void thunkDecodeFrom(uint32_t pc,ThunkParse state,uint32_t start,CachedThunk& cached,unsigned& guard,uint32_t& highestEnd){
+    for(;;){
+        if(cached.program.count(pc))return;
+        if(++guard>8192)throw GuestStop("Generated callback did not return at "+hex(start));
+        if(pc<start||pc-start>=65536)throw GuestStop("Generated callback branch outside budget");
+        uint32_t instruction=pc;
+        auto byte=[&](){return *static_cast<const uint8_t*>(ptr(pc++,1));};
+        auto word=[&](){uint32_t value=read32(pc);pc+=4;return value;};
+        uint8_t op=byte();
+        ThunkOp decoded{};
+        if(op==0x56){
+            if(!state.saved)state.saved=1;else{++state.arguments;++state.totalArguments;state.pending=true;state.stackCleared=false;}
+            decoded.kind=ThunkOp::Skip;
+        }else if(op==0xe8&&state.pending){
+            int32_t delta=static_cast<int32_t>(word());uint32_t target=pc+delta;
             recomp_func_t fn=generatedTestActive&&target==generatedTestTarget?generatedTestCallback:recomp_lookup(target);
             if(!fn)throw GuestStop("Generated callback calls unlifted "+hex(target));
+            decoded.kind=ThunkOp::Call;decoded.a=target;decoded.fn=fn;state.pending=false;
+        }else if(op==0x83||op==0x81){
+            uint8_t form=byte();uint32_t delta=op==0x83?uint32_t(int32_t(int8_t(byte()))):word();
+            if(form==0xc6){decoded.kind=ThunkOp::AddEsi;decoded.a=delta;state.compared=false;}
+            else if(form==0xc4&&delta==state.arguments*4&&!state.pending){decoded.kind=ThunkOp::Skip;state.stackCleared=true;state.arguments=0;state.compared=false;}
+            else thunkDecodeFault(start,instruction);
+        }else if(op==0x89){
+            uint8_t form=byte();uint32_t offset;
+            if(form==0x86)offset=word();else if(form==0x46)offset=byte();else{thunkDecodeFault(start,instruction);offset=0;}
+            decoded.kind=ThunkOp::Store;decoded.a=offset;
+        }else if(op==0x8b){
+            uint8_t form=byte();
+            if(form==0x74||form==0xb4){uint8_t sib=byte();uint32_t offset=form==0x74?uint32_t(int32_t(int8_t(byte()))):word();
+                if(sib==0x24&&state.saved&&offset==4*(state.saved+state.arguments)+4)decoded.kind=ThunkOp::ReloadEsi;
+                else thunkDecodeFault(start,instruction);
+            }else if(form==0x46){decoded.kind=ThunkOp::LoadEaxOff;decoded.a=uint32_t(int32_t(int8_t(byte())));}
+            else if(form==0x06){decoded.kind=ThunkOp::LoadEaxOff;decoded.a=0;}
+            else if(form==0x4e){decoded.kind=ThunkOp::LoadEcxOff;decoded.a=uint32_t(int32_t(int8_t(byte())));}
+            else if(form==0x8e){decoded.kind=ThunkOp::LoadEcxOff;decoded.a=word();}
+            else if(form==0x0e){decoded.kind=ThunkOp::LoadEcxOff;decoded.a=0;}
+            else if(form==0xc1){decoded.kind=ThunkOp::EaxFromEcx;}
+            else thunkDecodeFault(start,instruction);
+        }else if(op==0x3b){
+            if(byte()!=0xc1)thunkDecodeFault(start,instruction);
+            decoded.kind=ThunkOp::Cmp;state.compared=true;
+        }else if(op==0x0f){
+            if(byte()!=0xaf)thunkDecodeFault(start,instruction);
+            uint8_t form=byte();
+            if(form==0x46){decoded.kind=ThunkOp::Imul;decoded.a=uint32_t(int32_t(int8_t(byte())));}
+            else if(form==0x86){decoded.kind=ThunkOp::Imul;decoded.a=word();}
+            else if(form==0x06){decoded.kind=ThunkOp::Imul;decoded.a=0;}
+            else thunkDecodeFault(start,instruction);
+            state.compared=false;
+        }else if(op>=0x7c&&op<=0x7f&&state.compared){
+            int8_t delta=int8_t(byte());uint32_t target=pc+int32_t(delta);
+            if(target<start||target-start>=65536)throw GuestStop("Generated callback branch outside budget");
+            decoded.kind=ThunkOp::Jcc;decoded.cc=op;decoded.taken=target;decoded.next=pc;
+            cached.program[instruction]=decoded;highestEnd=std::max(highestEnd,pc);
+            thunkDecodeFrom(target,state,start,cached,guard,highestEnd);
+            continue;  // decode the fallthrough path (pc already advanced past the branch)
+        }else if(op==0xc6){
+            uint8_t b1=byte(),b2=byte(),b3=byte();
+            if(b1!=0x46||b2!=0||b3!=0)thunkDecodeFault(start,instruction);
+            decoded.kind=ThunkOp::ZeroByte;
+        }else if(op==0x03||op==0x2b){
+            uint8_t form=byte();uint32_t offset;
+            if(form==0x46)offset=uint32_t(int32_t(int8_t(byte())));else if(form==0x86)offset=word();else if(form==0x06)offset=0;
+            else{thunkDecodeFault(start,instruction);offset=0;}
+            decoded.kind=op==0x03?ThunkOp::AddOff:ThunkOp::SubOff;decoded.a=offset;state.compared=false;
+        }else if(op==0x5e&&state.stackCleared&&!state.pending){
+            decoded.kind=ThunkOp::Skip;state.popped=true;
+        }else if(op==0xc3&&state.popped&&state.saved&&state.totalArguments>0&&!state.arguments){
+            decoded.kind=ThunkOp::Ret;cached.program[instruction]=decoded;highestEnd=std::max(highestEnd,pc);return;
+        }else{
+            thunkDecodeFault(start,instruction);
+        }
+        decoded.next=pc;cached.program[instruction]=decoded;highestEnd=std::max(highestEnd,pc);
+    }
+}
+
+void thunkReplay(const CachedThunk& cached,uint32_t start){
+    uint32_t originalEsi=g_esi,esi=0,eax=g_eax,ecx=g_ecx,originalEsp=g_esp;int comparison=0;
+    uint32_t pc=start;
+    for(unsigned steps=0;steps<4096;++steps){
+        const ThunkOp& op=cached.program.at(pc);
+        switch(op.kind){
+        case ThunkOp::Skip: pc=op.next; break;
+        case ThunkOp::AddEsi: esi+=op.a; pc=op.next; break;
+        case ThunkOp::Store: write32(esi+op.a,eax); pc=op.next; break;
+        case ThunkOp::ReloadEsi: esi=read32(originalEsp+4); pc=op.next; break;
+        case ThunkOp::LoadEaxOff: eax=read32(esi+op.a); pc=op.next; break;
+        case ThunkOp::LoadEcxOff: ecx=read32(esi+op.a); pc=op.next; break;
+        case ThunkOp::EaxFromEcx: eax=ecx; pc=op.next; break;
+        case ThunkOp::Cmp: comparison=int32_t(eax)<int32_t(ecx)?-1:int32_t(eax)>int32_t(ecx)?1:0; pc=op.next; break;
+        case ThunkOp::Imul: eax*=read32(esi+op.a); pc=op.next; break;
+        case ThunkOp::Jcc:{
+            bool taken=op.cc==0x7c?comparison<0:op.cc==0x7d?comparison>=0:op.cc==0x7e?comparison<=0:comparison>0;
+            pc=taken?op.taken:op.next; break;}
+        case ThunkOp::ZeroByte: *static_cast<uint8_t*>(ptr(esi,1))=0; pc=op.next; break;
+        case ThunkOp::AddOff: eax+=read32(esi+op.a); pc=op.next; break;
+        case ThunkOp::SubOff: eax-=read32(esi+op.a); pc=op.next; break;
+        case ThunkOp::Call:{
             // A plain cdecl call, as the x86 code does: the lifted callee keeps
             // ebx/esi/edi/ebp itself. callGuest's full register/x87/SSE save and
             // restore around each of these ~100 calls per mix dominated the
             // audio thread, which holds the guest machine the renderer waits on.
             uint32_t caller=g_cur_func,stack=g_esp;
             g_esp-=4;write32(g_esp,esi);g_esp-=4;write32(g_esp,RECOMP_RETADDR);
-            fn();g_esp+=4;g_cur_func=caller;
-            if(g_esp!=stack)throw GuestStop("Generated callback stack imbalance calling "+hex(target));
-            eax=g_eax;pending=false;continue;}
-        if(op==0x83){uint8_t form=byte(),delta=byte();
-            if(form==0xc6){esi+=int8_t(delta);compared=false;continue;}
-            if(form==0xc4&&uint32_t(int32_t(int8_t(delta)))==arguments*4&&!pending){stackCleared=true;arguments=0;compared=false;continue;}
+            op.fn();g_esp+=4;g_cur_func=caller;
+            if(g_esp!=stack)throw GuestStop("Generated callback stack imbalance calling "+hex(op.a));
+            eax=g_eax;pc=op.next;break;}
+        case ThunkOp::Ret:
+            g_eax=eax;g_ecx=ecx;g_esi=originalEsi;g_esp=originalEsp+4;return;
         }
-        if(op==0x81){uint8_t form=byte();uint32_t delta=word();
-            if(form==0xc6){esi+=delta;compared=false;continue;}
-            if(form==0xc4&&delta==arguments*4&&!pending){stackCleared=true;arguments=0;compared=false;continue;}
-        }
-        if(op==0x89){uint8_t form=byte();uint32_t offset;
-            if(form==0x86)offset=word();else if(form==0x46)offset=byte();else throw GuestStop("Generated callback store form pending");
-            write32(esi+offset,eax);continue;}
-        if(op==0x8b){uint8_t form=byte();
-            if(form==0x74||form==0xb4){uint8_t sib=byte();uint32_t offset=form==0x74?uint32_t(int32_t(int8_t(byte()))):word();
-                if(sib==0x24&&saved&&offset==4*(saved+arguments)+4){esi=read32(originalEsp+4);continue;}}
-            if(form==0x46){eax=read32(esi+byte());continue;}
-            if(form==0x06){eax=read32(esi);continue;}
-            if(form==0x4e){ecx=read32(esi+uint32_t(int32_t(int8_t(byte()))));continue;}
-            if(form==0x8e){ecx=read32(esi+word());continue;}
-            if(form==0x0e){ecx=read32(esi);continue;}
-            if(form==0xc1){eax=ecx;continue;}
-        }
-        if(op==0x3b&&byte()==0xc1){comparison=int32_t(eax)<int32_t(ecx)?-1:int32_t(eax)>int32_t(ecx)?1:0;compared=true;continue;}
-        if(op==0x0f&&byte()==0xaf){uint8_t form=byte();
-            if(form==0x46){eax*=read32(esi+uint32_t(int32_t(int8_t(byte()))));compared=false;continue;}
-            if(form==0x86){eax*=read32(esi+word());compared=false;continue;}
-            if(form==0x06){eax*=read32(esi);compared=false;continue;}
-        }
-        if(op>=0x7c&&op<=0x7f&&compared){int8_t delta=int8_t(byte());bool taken=op==0x7c?comparison<0:op==0x7d?comparison>=0:op==0x7e?comparison<=0:comparison>0;
-            if(taken){uint32_t target=pc+int32_t(delta);if(target<start||target-start>=65536)throw GuestStop("Generated callback branch outside budget");pc=target;}continue;}
-        if(op==0xc6&&byte()==0x46&&byte()==0&&byte()==0){*static_cast<uint8_t*>(ptr(esi,1))=0;continue;}
-        if(op==0x03||op==0x2b){uint8_t form=byte();uint32_t offset;
-            if(form==0x46)offset=uint32_t(int32_t(int8_t(byte())));else if(form==0x86)offset=word();else if(form==0x06)offset=0;else throw GuestStop("Generated callback arithmetic form pending");
-            if(op==0x03)eax+=read32(esi+offset);else eax-=read32(esi+offset);compared=false;continue;}
-        if(op==0x5e&&stackCleared&&!pending){popped=true;continue;}
-        if(op==0xc3&&popped&&saved&&totalArguments>0&&!arguments){g_eax=eax;g_ecx=ecx;g_esi=originalEsi;g_esp=originalEsp+4;
-            static unsigned completed=0;if(++completed<=3)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Generated x86 callback translated: %08x, %u operations",start,steps+1);
-            return;}
-        uint32_t fault=instruction;
-        if(memory->readable(fault,32)){
-            const auto* raw=static_cast<const uint8_t*>(ptr(fault,32));std::ostringstream dump;
-            for(unsigned i=0;i<32;++i)dump<<std::hex<<std::setw(2)<<std::setfill('0')<<unsigned(raw[i]);
-            NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Generated callback start=%08x offset=%03x bytes=%s",start,fault-start,dump.str().c_str());
-        }
-        throw GuestStop("Generated callback opcode pending at "+hex(fault));
     }
-    NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Generated callback budget reached start=%08x pc=%08x arguments=%u",start,pc,arguments);
     throw GuestStop("Generated callback did not return at "+hex(start));
+}
+}
+
+void dynamicThunk(){
+    uint32_t start=dynamicThunkAddress;
+    if(!memory->readable(start,5)||read32(start)!=0x24748b56u||*static_cast<uint8_t*>(ptr(start+4,1))!=8)
+        throw GuestStop("Invalid generated callback at "+hex(start));
+    auto found=g_thunkCache.find(start);
+    if(found!=g_thunkCache.end()){
+        const CachedThunk& cached=found->second;
+        // The guest heap can reuse this address for different generated code later in
+        // the session (a mix's thunk freed, another's allocated in its place): trust the
+        // cached decode only while the bytes it was built from are still there.
+        if(memory->readable(start,uint32_t(cached.bytes.size()))&&
+           std::memcmp(ptr(start,cached.bytes.size()),cached.bytes.data(),cached.bytes.size())==0){
+            thunkReplay(cached,start);return;
+        }
+        g_thunkCache.erase(found);
+    }
+    CachedThunk cached;unsigned guard=0;uint32_t highestEnd=start;
+    thunkDecodeFrom(start,ThunkParse{},start,cached,guard,highestEnd);
+    // highestEnd is the exact end of the last byte any decoded instruction consumed:
+    // the integrity check below only needs to cover bytes this decode actually read.
+    uint32_t length=highestEnd-start;
+    cached.bytes.assign(static_cast<const uint8_t*>(ptr(start,length)),static_cast<const uint8_t*>(ptr(start,length))+length);
+    static unsigned completed=0;if(++completed<=3)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Generated x86 callback decoded: %08x, %zu operations",start,cached.program.size());
+    thunkReplay(cached,start);
+    g_thunkCache.emplace(start,std::move(cached));
 }
 void testGeneratedCallbacks(){
     uint32_t code=allocate(2048),data=allocate(840);std::vector<uint8_t> bytes;
