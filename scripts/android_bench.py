@@ -183,6 +183,9 @@ def run_menu(args, out: Path, label: str):
         elif kind == "tap":
             x, y = value.split(",")
             adb(args, "shell", "input", "tap", x, y)
+        elif kind == "hold":  # hold:x/y/ms - a timed touch (menus that need a held confirm)
+            x, y, ms = value.split("/")
+            adb(args, "shell", "input", "swipe", x, y, x, y, ms)
         elif kind == "shot":
             screenshot(args, out / f"{label}-{value}.png")
         else:

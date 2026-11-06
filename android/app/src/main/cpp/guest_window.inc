@@ -88,13 +88,15 @@ void enqueueGuestKey(unsigned scan,bool down){
             for(unsigned i=0;i<26;++i)if(scan==letters[i])key='A'+i;
             if(scan>=2&&scan<=0xb)key=scan==0xb?'0':'1'+scan-2;break;}}
     if(!key)return;uint32_t flags=1|((scan&0x7f)<<16)|((scan&0x80)?1u<<24:0)|(!down?0xc0000000u:0);
-    std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({0,down?0x100u:0x101u,key,flags,messageTime()});
+    {std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({0,down?0x100u:0x101u,key,flags,messageTime()});}
+    signalGuestSync(&windowMessages);
 }
 // Android text entry: the game's window procedure reads typed text from WM_CHAR
 // (wParam is the character as-is, 8 = backspace), so post the characters directly.
 void enqueueGuestText(const std::vector<uint32_t>& characters){
-    std::lock_guard<std::mutex> lock(messageMutex);
-    for(uint32_t ch:characters)windowMessages.push_back({0,0x102u,ch,1u,messageTime()});
+    {std::lock_guard<std::mutex> lock(messageMutex);
+     for(uint32_t ch:characters)windowMessages.push_back({0,0x102u,ch,1u,messageTime()});}
+    signalGuestSync(&windowMessages);
 }
 // Touch as mouse: Android writes the pointer as a fraction of the game view; it is
 // turned into client coordinates of the active window under the machine lock.
@@ -108,10 +110,11 @@ std::pair<int32_t,int32_t> pointerInWindow(){
     return {std::min(int32_t(guestPointerX.load()*float(width)),width-1),std::min(int32_t(guestPointerY.load()*float(height)),height-1)};
 }
 void enqueueGuestPointer(int phase){  // 0 down, 1 move, 2 up
-    std::lock_guard<std::mutex> lock(messageMutex);
-    windowMessages.push_back({0,0x200u,phase==2?0u:1u,pointerPending,messageTime()});
-    if(phase==0)windowMessages.push_back({0,0x201u,1u,pointerPending,messageTime()});
-    if(phase==2)windowMessages.push_back({0,0x202u,0u,pointerPending,messageTime()});
+    {std::lock_guard<std::mutex> lock(messageMutex);
+     windowMessages.push_back({0,0x200u,phase==2?0u:1u,pointerPending,messageTime()});
+     if(phase==0)windowMessages.push_back({0,0x201u,1u,pointerPending,messageTime()});
+     if(phase==2)windowMessages.push_back({0,0x202u,0u,pointerPending,messageTime()});}
+    signalGuestSync(&windowMessages);
 }
 void setCapture(){uint32_t old=captureWindow;captureWindow=windows.count(arg(0))?arg(0):0;ret(old,1);}
 void releaseCapture(){captureWindow=0;ret(1,0);}
@@ -135,7 +138,8 @@ void peekMessage(){
 }
 void getMessage(){
     if(!arg(0)||(arg(1)&&arg(1)!=UINT32_MAX&&!windows.count(arg(1)))){lastError=1400;ret(UINT32_MAX,4);return;}
-    while(!takeWindowMessage(arg(0),arg(1),arg(2),arg(3),true)){checkGuestProgress();yieldGuestMachine(1);}
+    WaitScope scope("GetMessage",arg(1));
+    blockGuestUntil([&]{return takeWindowMessage(arg(0),arg(1),arg(2),arg(3),true);},noDeadline,{&windowMessages});
     ret(read32(arg(0)+4)==0x12?0:1,4);
 }
 void dispatchMessage(){uint32_t message=arg(0);if(!message){ret(0,1);return;}ret(windowMessage(read32(message),read32(message+4),read32(message+8),read32(message+12)),1);}
@@ -144,11 +148,12 @@ void translateMessage(){
     if(type!=0x100&&type!=0x104){ret(0,1);return;}
     if((key>='A'&&key<='Z')||(key>='0'&&key<='9')||key==13||key==9||key==32||key==8){
         if(key>='A'&&key<='Z')key+='a'-'A';
-        std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({read32(address),0x102,key,read32(address+12),messageTime()});
+        {std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({read32(address),0x102,key,read32(address+12),messageTime()});}
+        signalGuestSync(&windowMessages);
     }
     ret(1,1);
 }
 void postMessage(){uint32_t hwnd=arg(0);if(hwnd&&!windows.count(hwnd)){lastError=1400;ret(0,4);return;}
-    std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({hwnd,arg(1),arg(2),arg(3),messageTime()});ret(1,4);}
-void postQuitMessage(){std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({0,0x12,arg(0),0,messageTime()});ret(0,1);}
+    {std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({hwnd,arg(1),arg(2),arg(3),messageTime()});}signalGuestSync(&windowMessages);ret(1,4);}
+void postQuitMessage(){{std::lock_guard<std::mutex> lock(messageMutex);windowMessages.push_back({0,0x12,arg(0),0,messageTime()});}signalGuestSync(&windowMessages);ret(0,1);}
 void sendMessage(){if(!windows.count(arg(0))){lastError=1400;ret(0,4);return;}ret(windowMessage(arg(0),arg(1),arg(2),arg(3)),4);}

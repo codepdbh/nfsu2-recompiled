@@ -32,6 +32,7 @@
 #include <atomic>
 #include <unistd.h>
 #include <pthread.h>
+#include <sched.h>
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -121,48 +122,89 @@ unsigned claimSchedSlot(uint32_t guestId){
     unsigned slot=std::min(schedSlotsClaimed.fetch_add(1),schedSlotCount-1);
     schedStats[slot].guestId.store(guestId,std::memory_order_relaxed);return slot;
 }
+// The thread that presents frames: served ahead of the FIFO when it queues
+// for the machine, within the bounds below.
+thread_local bool machinePriority=false;
+// The machine lock. Fair by default: unlock() hands the machine straight to
+// the longest-queued thread (no ticket window a newcomer could barge into),
+// and wakes only that thread -- a single shared condition variable woke every
+// waiter per handover, and the audio mixer thread starving behind others made
+// "the sound loop" on the Redmi Note 8. The render thread may jump the queue,
+// bounded: never past a thread already queued for 2 ms (less than half an
+// AAudio burst, so the mixer always gets its turn within a burst) and never
+// more than 3 times in a row. On a Dimensity 8400 free-roam run the render
+// thread spent 10-12 ms of a 30 ms frame queued behind threads that then held
+// the machine for 0.03-0.08 ms each.
 class MachineMutex {
+    struct Waiter{std::thread::id id;std::condition_variable cv;std::chrono::steady_clock::time_point since;bool priority;};
     std::mutex m_;
-    std::condition_variable cv_;
-    uint64_t next_=0,serving_=0;
-    std::thread::id owner_{};
-    unsigned depth_=0;
+    std::vector<Waiter*> waiters_;   // FIFO; a waiter lives on its thread's stack until served
+    std::atomic<std::thread::id> owner_{};   // atomic: queued threads spin on it before sleeping
+    unsigned depth_=0,priorityJumps_=0;
+    static constexpr std::chrono::milliseconds maxQueueBeforeFair{2};
+    static constexpr unsigned maxPriorityJumps=3;
+    // A queued thread spins this long before sleeping on its condition
+    // variable: a futex wake costs ~0.3 ms here and the machine changes hands
+    // ~13 times per frame, which was most of the render thread's 9 ms/frame
+    // of waiting. The Dimensity 8400 has eight performance cores and the game
+    // keeps two busy, so the spinning core is free anyway.
+#if defined(NFS_GUEST_FAST)
+    static constexpr std::chrono::microseconds spinBeforeSleep{1500},prioritySpinBeforeSleep{4000};
+#else
+    static constexpr std::chrono::microseconds spinBeforeSleep{500},prioritySpinBeforeSleep{2000};   // portable build: less heat
+#endif
+    void took(std::chrono::steady_clock::time_point queued){
+        acquired=std::chrono::steady_clock::now();
+        auto& stats=schedStats[schedSlot];
+        stats.waitNs.fetch_add(uint64_t((acquired-queued).count()),std::memory_order_relaxed);
+        stats.acquisitions.fetch_add(1,std::memory_order_relaxed);
+    }
 public:
     void lock(){
         const auto me=std::this_thread::get_id();
         std::unique_lock<std::mutex> l(m_);
-        if(owner_==me){++depth_;return;}
-        const uint64_t ticket=next_++;
+        if(owner_.load(std::memory_order_relaxed)==me){++depth_;return;}
         auto queued=std::chrono::steady_clock::now();
-        cv_.wait(l,[&]{return serving_==ticket;});
-        owner_=me;depth_=1;acquired=std::chrono::steady_clock::now();
-        auto& stats=schedStats[schedSlot];
-        stats.waitNs.fetch_add(uint64_t((acquired-queued).count()),std::memory_order_relaxed);
-        stats.acquisitions.fetch_add(1,std::memory_order_relaxed);
+        if(owner_.load(std::memory_order_relaxed)==std::thread::id{}&&waiters_.empty()){owner_=me;depth_=1;took(queued);return;}
+        Waiter self{me,{},queued,machinePriority};
+        waiters_.push_back(&self);
+        l.unlock();
+        auto spinUntil=queued+(machinePriority?prioritySpinBeforeSleep:spinBeforeSleep);
+        while(owner_.load(std::memory_order_acquire)!=me&&std::chrono::steady_clock::now()<spinUntil)sched_yield();
+        l.lock();
+        self.cv.wait(l,[&]{return owner_.load(std::memory_order_relaxed)==me;});   // unlock() removed us from the queue and handed over
+        depth_=1;took(queued);
     }
     // When the current owner got the machine; only the owner reads it.
     std::chrono::steady_clock::time_point acquired{};
     bool try_lock(){
         const auto me=std::this_thread::get_id();
         std::lock_guard<std::mutex> l(m_);
-        if(owner_==me){++depth_;return true;}
-        if(next_!=serving_)return false;
-        ++next_;owner_=me;depth_=1;acquired=std::chrono::steady_clock::now();
-        schedStats[schedSlot].acquisitions.fetch_add(1,std::memory_order_relaxed);return true;
+        if(owner_.load(std::memory_order_relaxed)==me){++depth_;return true;}
+        if(owner_.load(std::memory_order_relaxed)!=std::thread::id{}||!waiters_.empty())return false;
+        owner_=me;depth_=1;took(std::chrono::steady_clock::now());return true;
     }
     bool hasWaiters(){
         std::lock_guard<std::mutex> lock(m_);
-        return next_>serving_+1; // the current owner already holds one ticket
+        return !waiters_.empty();
     }
     void unlock(){
-        {
-            std::lock_guard<std::mutex> l(m_);
-            if(--depth_)return;
-            schedStats[schedSlot].holdNs.fetch_add(uint64_t((std::chrono::steady_clock::now()-acquired).count()),std::memory_order_relaxed);
-            owner_={};++serving_;
-            if(next_==serving_)return;          // nobody waiting
+        std::lock_guard<std::mutex> l(m_);
+        if(--depth_)return;
+        schedStats[schedSlot].holdNs.fetch_add(uint64_t((std::chrono::steady_clock::now()-acquired).count()),std::memory_order_relaxed);
+        if(waiters_.empty()){owner_.store(std::thread::id{},std::memory_order_release);return;}
+        size_t pick=0;
+        for(size_t i=1;i<waiters_.size();++i)if(waiters_[i]->priority){pick=i;break;}
+        if(pick){
+            bool fair=std::chrono::steady_clock::now()-waiters_[0]->since>=maxQueueBeforeFair||priorityJumps_>=maxPriorityJumps;
+            if(fair)pick=0;else ++priorityJumps_;
         }
-        cv_.notify_all();
+        if(!pick)priorityJumps_=0;
+        Waiter* next=waiters_[pick];waiters_.erase(waiters_.begin()+ptrdiff_t(pick));
+        owner_.store(next->id,std::memory_order_release);
+        // Notified under m_: a spurious wakeup could otherwise see owner_==me,
+        // return and destroy the Waiter before notify_one touched it.
+        next->cv.notify_one();
     }
 };
 MachineMutex machine;
@@ -271,13 +313,67 @@ void checkGuestProgress() {
     if((++checkpoints&63u)==0){
         auto now=std::chrono::steady_clock::now();
         if(now>bootDeadline)throw GuestStop("CRT bring-up time budget reached at "+hex(g_cur_func));
-        auto slice=renderThread?std::chrono::microseconds(3000):std::chrono::microseconds(500);
+        // With spinning handovers (MachineMutex) a slice costs the render
+        // thread only the other thread's hold time, so it yields almost as
+        // soon as somebody queues: 3 ms slices left waiters asleep past their
+        // spin budget and each handover cost a ~0.3 ms futex wake.
+        auto slice=renderThread?std::chrono::microseconds(300):std::chrono::microseconds(500);
         if(now-machine.acquired>=slice&&machine.hasWaiters()){
             yieldGuestMachine();
             if(renderThread){++renderYields;renderWait+=std::chrono::steady_clock::now()-now;}
         }
     }
     if(!guestThreadFault.empty())throw GuestStop(guestThreadFault);
+}
+// Event-driven guest waits. Guest wait objects (events, mutexes, threads,
+// timers, critical sections, window messages) change only under the machine
+// lock or messageMutex. A blocked thread registers the objects it waits on,
+// releases the machine and sleeps until one of them is signaled or its
+// deadline passes, instead of re-queuing for the machine every millisecond:
+// with 100 one-shot timers/s in a race the timer worker alone made ~1000
+// machine acquisitions/s, each one a handover the render thread had to wait
+// for. Signals are per object: a global broadcast woke every blocked thread
+// several times per frame (SetEvent, LeaveCriticalSection, PostMessage), each
+// taking the machine for 0.03 ms just to go back to sleep. Registration
+// precedes the readiness check, so a signal from a host thread (window
+// messages) between the check and the sleep is still seen. The 50 ms cap
+// turns a forgotten signaler into the old polling rather than a hang.
+struct SyncWaiter{const void* const* keys;size_t count;bool woken=false;std::condition_variable cv;};
+std::mutex syncMutex;std::vector<SyncWaiter*> syncWaiters;
+// key = the object that changed; nullptr wakes everyone (stop, pause).
+void signalGuestSync(const void* key=nullptr){
+    std::lock_guard<std::mutex> l(syncMutex);
+    for(auto* waiter:syncWaiters){
+        if(waiter->woken)continue;
+        bool hit=!key;for(size_t i=0;!hit&&i<waiter->count;++i)hit=waiter->keys[i]==key;
+        if(hit){waiter->woken=true;waiter->cv.notify_one();}   // under syncMutex: the waiter cannot leave before this
+    }
+}
+constexpr auto syncSafetyCap=std::chrono::milliseconds(50);
+constexpr auto noDeadline=std::chrono::steady_clock::time_point::max();
+std::chrono::steady_clock::time_point guestDeadline(uint32_t milliseconds){
+    return milliseconds==UINT32_MAX?noDeadline:std::chrono::steady_clock::now()+std::chrono::milliseconds(milliseconds);
+}
+// ready() runs under the machine lock; returns false on deadline.
+template<class Ready> bool blockGuestUntil(Ready&& ready,std::chrono::steady_clock::time_point deadline,const void* const* keys,size_t count){
+    for(;;){
+        SyncWaiter self{keys,count};
+        {std::lock_guard<std::mutex> l(syncMutex);syncWaiters.push_back(&self);}
+        struct Unregister{SyncWaiter* self;~Unregister(){std::lock_guard<std::mutex> l(syncMutex);syncWaiters.erase(std::find(syncWaiters.begin(),syncWaiters.end(),self));}} unregister{&self};
+        checkGuestProgress();
+        if(ready())return true;
+        auto now=std::chrono::steady_clock::now();
+        if(now>=deadline)return false;
+        if(!machineLease||!machineLease->owns_lock())throw GuestStop("Guest scheduler ownership missing");
+        {auto& trace=currentTrace();trace.func=g_cur_func;trace.esp=g_esp;}
+        State saved;saved.save();machineLease->unlock();
+        {std::unique_lock<std::mutex> l(syncMutex);
+         self.cv.wait_until(l,std::min(deadline,now+syncSafetyCap),[&]{return self.woken||stopRequested.load()||guestPaused.load();});}
+        machineLease->lock();saved.load();
+    }
+}
+template<class Ready> bool blockGuestUntil(Ready&& ready,std::chrono::steady_clock::time_point deadline,std::initializer_list<const void*> keys={}){
+    return blockGuestUntil(ready,deadline,keys.begin(),keys.size());
 }
 constexpr uint32_t importBase = 0x7f000000u;
 constexpr uint32_t stackBase = 0x20000000u, stackSize = 16u << 20, tib = 0x21000000u;
@@ -378,7 +474,7 @@ void d3dDispatch(){
         auto deadline=pacer.deadline(now,frameLimit.load(std::memory_order_relaxed));
         // The renderer has returned; guest audio/streaming workers can use the
         // machine while this thread waits. Late frames incur no extra delay.
-        renderThread=true;
+        renderThread=true;machinePriority=true;
         if(deadline>now)yieldGuestMachine(0,deadline);
         else if(machine.hasWaiters()){auto before=std::chrono::steady_clock::now();yieldGuestMachine();++renderYields;renderWait+=std::chrono::steady_clock::now()-before;}
         frameBegan=std::chrono::steady_clock::now();
@@ -1065,12 +1161,13 @@ std::string connectGuestRuntime(const char* executable) {
         return std::string("Arranque guest detenido: ")+e.what();
     }
 }
-void requestGuestRuntimeStop() {stopRequested=true;}
+void requestGuestRuntimeStop() {stopRequested=true;signalGuestSync();}
 void setGuestPaused(bool paused) {
     // The AAudio stream keeps pulling from looping voices while the guest is
     // paused: in the background the last mixed sound repeated until the app
     // closed. Pause the output with the guest and restart it on resume.
     bool previous=guestPaused.exchange(paused);
+    signalGuestSync();   // blocked guest threads re-check guestPaused
     if(previous!=paused&&soundStream){
         aaudio_result_t status=paused?AAudioStream_requestPause(soundStream):AAudioStream_requestStart(soundStream);
         if(status!=AAUDIO_OK)NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFS","Audio %s failed: %d",paused?"pause":"resume",int(status));
