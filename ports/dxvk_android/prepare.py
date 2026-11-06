@@ -64,6 +64,11 @@ replace('src/d3d9/d3d9_fixed_function.cpp', 'namespace dxvk {\n', 'namespace dxv
 # DXVK warnings and errors reach logcat (tag DXVK) for tester reports.
 replace('src/util/log/log.cpp', '#include "log.h"\n', '#include "log.h"\n#ifdef __ANDROID__\n#include <android/log.h>\n#endif\n')
 replace('src/util/log/log.cpp', '        std::cerr << prefix << line << std::endl;\n', '        std::cerr << prefix << line << std::endl;\n#ifdef __ANDROID__\n        // stderr goes nowhere on Android: send warnings and errors to logcat,\n        // so tester reports (logcat.txt) show why DXVK failed.\n        if (level >= LogLevel::Warn)\n          __android_log_print(level >= LogLevel::Error ? ANDROID_LOG_ERROR : ANDROID_LOG_WARN, "DXVK", "%s", line.c_str());\n#endif\n')
+# ...and the game's own log file when the app provides one (game_log.h), so they
+# survive in diagnostic reports after logcat has dropped them.
+replace('src/util/log/log.cpp', '#include "log.h"\n', '#include "log.h"\n#ifdef __ANDROID__\nextern "C" __attribute__((weak)) int nfsRuntimeLog(int, const char*, const char*, ...);\n#endif\n')
+replace('src/util/log/log.cpp', '          __android_log_print(level >= LogLevel::Error ? ANDROID_LOG_ERROR : ANDROID_LOG_WARN, "DXVK", "%s", line.c_str());\n',
+        '          (nfsRuntimeLog ? nfsRuntimeLog : __android_log_print)(level >= LogLevel::Error ? ANDROID_LOG_ERROR : ANDROID_LOG_WARN, "DXVK", "%s", line.c_str());\n')
 (args.output / "version.h").write_text('#define DXVK_VERSION "native-1.9.2b-android-arm64"\n')
 (args.output / "PINNED_REVISION").write_text(PIN + "\n")
 print("Prepared DXVK " + PIN)

@@ -1,7 +1,9 @@
 #pragma once
 #ifdef __ANDROID__
 #include <android/log.h>
-#define NFS_RUNTIME_LOG __android_log_print
+// logcat and the game's own log file (game_log.h).
+extern "C" int nfsRuntimeLog(int priority,const char* tag,const char* format,...) __attribute__((format(printf,3,4)));
+#define NFS_RUNTIME_LOG nfsRuntimeLog
 #else
 #include <cstdio>
 #include <cstdarg>

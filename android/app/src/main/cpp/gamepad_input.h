@@ -111,7 +111,7 @@ private:
             // X camera, Y look back, RB/LB shift up/down, Start pause.
             want[0xc8]=up||buttons_[R2]||past(rightTrigger_,0xc8);
             want[0xd0]=down||buttons_[L2]||past(leftTrigger_,0xd0);
-            want[0x39]=buttons_[A];want[0x38]=buttons_[B];want[0x2e]=buttons_[X];want[0x30]=buttons_[Y];
+            want[0x39]=buttons_[A];want[0x1c]=buttons_[A];want[0x38]=buttons_[B];want[0x2e]=buttons_[X];want[0x30]=buttons_[Y];
             want[0x2a]=buttons_[R1];want[0x1d]=buttons_[L1];
             want[0x01]=buttons_[Start]||buttons_[Select];
         }else{

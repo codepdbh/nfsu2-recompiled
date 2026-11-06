@@ -87,6 +87,11 @@ final class Diagnostics {
             info.append("language=").append(GameOptions.language(context)).append('\n');
             add(zip, "informe.txt", info.toString().getBytes(StandardCharsets.UTF_8));
             add(zip, "logcat.txt", logcat(0));
+            // The game's own log (game_log.h): kept after Android drops its logcat lines.
+            for (String name : new String[] {"game.log", "game-previous.log"}) {
+                File log = new File(context.getFilesDir(), name);
+                if (log.isFile()) try (java.io.FileInputStream input = new java.io.FileInputStream(log)) { add(zip, name, readLimited(input)); }
+            }
             ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (Build.VERSION.SDK_INT >= 30 && manager != null) addExitInfo(zip, manager, context);
         } catch (Exception error) {

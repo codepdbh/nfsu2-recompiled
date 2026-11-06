@@ -87,7 +87,11 @@ public:
         for(unsigned i=0;i<frames*2;++i){
             float amplitude=std::abs(output[i]);peakAmplitude=std::max(peakAmplitude,amplitude);
             if(amplitude>1.f)++clippedSamples;
-            output[i]=std::clamp(output[i],-1.f,1.f);
+            // Soft knee above 0.85 instead of a hard clip: the upsampler overshoots
+            // full-scale engine sound slightly, and clipping it sounded like static (MW #579).
+            float value=output[i],magnitude=std::abs(value);
+            if(magnitude>.85f)value=std::copysign(.85f+.15f*std::tanh((magnitude-.85f)/.15f),value);
+            output[i]=value;
         }
     }
 };
