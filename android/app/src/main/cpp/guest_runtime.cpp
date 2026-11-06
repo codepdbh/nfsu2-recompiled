@@ -107,6 +107,20 @@ std::unique_ptr<GuestHeaps> heaps;
 // ring too late, and the mixer replayed stale data ("the sound loops"). The
 // same starvation made the Windows build stutter until native32 got a ticket
 // lock. Here every unlock hands the machine to the longest waiter.
+// Per guest thread: how long it held the machine, how often it took it and how
+// long it queued for it. Reported per frame in the Present statistics, so the
+// scheduler's cost is visible per thread (the render thread's "waiting" alone
+// does not say who had the machine meanwhile). Slot 0 is the main/render
+// thread; guest threads claim a slot in guestThreadEntry.
+struct SchedStats{std::atomic<uint64_t> holdNs{0},acquisitions{0},waitNs{0};std::atomic<uint32_t> guestId{0};};
+constexpr unsigned schedSlotCount=16;
+SchedStats schedStats[schedSlotCount];
+thread_local unsigned schedSlot=0;
+std::atomic<unsigned> schedSlotsClaimed{1};
+unsigned claimSchedSlot(uint32_t guestId){
+    unsigned slot=std::min(schedSlotsClaimed.fetch_add(1),schedSlotCount-1);
+    schedStats[slot].guestId.store(guestId,std::memory_order_relaxed);return slot;
+}
 class MachineMutex {
     std::mutex m_;
     std::condition_variable cv_;
@@ -119,8 +133,12 @@ public:
         std::unique_lock<std::mutex> l(m_);
         if(owner_==me){++depth_;return;}
         const uint64_t ticket=next_++;
+        auto queued=std::chrono::steady_clock::now();
         cv_.wait(l,[&]{return serving_==ticket;});
         owner_=me;depth_=1;acquired=std::chrono::steady_clock::now();
+        auto& stats=schedStats[schedSlot];
+        stats.waitNs.fetch_add(uint64_t((acquired-queued).count()),std::memory_order_relaxed);
+        stats.acquisitions.fetch_add(1,std::memory_order_relaxed);
     }
     // When the current owner got the machine; only the owner reads it.
     std::chrono::steady_clock::time_point acquired{};
@@ -129,7 +147,8 @@ public:
         std::lock_guard<std::mutex> l(m_);
         if(owner_==me){++depth_;return true;}
         if(next_!=serving_)return false;
-        ++next_;owner_=me;depth_=1;acquired=std::chrono::steady_clock::now();return true;
+        ++next_;owner_=me;depth_=1;acquired=std::chrono::steady_clock::now();
+        schedStats[schedSlot].acquisitions.fetch_add(1,std::memory_order_relaxed);return true;
     }
     bool hasWaiters(){
         std::lock_guard<std::mutex> lock(m_);
@@ -139,6 +158,7 @@ public:
         {
             std::lock_guard<std::mutex> l(m_);
             if(--depth_)return;
+            schedStats[schedSlot].holdNs.fetch_add(uint64_t((std::chrono::steady_clock::now()-acquired).count()),std::memory_order_relaxed);
             owner_={};++serving_;
             if(next_==serving_)return;          // nobody waiting
         }
@@ -372,8 +392,18 @@ void d3dDispatch(){
             char detail[256];int used=0;
             for(unsigned slot:top)if(methodTime[slot].count()>0&&used<200)
                 used+=std::snprintf(detail+used,sizeof detail-used," %u.%u=%.2f",slot/256u,slot%256u,double(methodTime[slot].count())/1e6/frames);
-            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Bridge ms/frame by kind.method:%s; render handovers %.1f/frame, waiting %.2f ms/frame",used?detail:" none",
-                double(renderYields)/frames,double(renderWait.count())/1e6/frames);
+            // Per guest thread, per frame: ms holding the machine, acquisitions, ms queued for it.
+            std::string sched;
+            for(unsigned slot=0;slot<std::min(schedSlotsClaimed.load(),schedSlotCount);++slot){
+                auto& s=schedStats[slot];
+                uint64_t hold=s.holdNs.exchange(0,std::memory_order_relaxed),acq=s.acquisitions.exchange(0,std::memory_order_relaxed),wait=s.waitNs.exchange(0,std::memory_order_relaxed);
+                if(!hold&&!acq)continue;
+                char item[64];std::snprintf(item,sizeof item," sched t%u hold %.2f acq %.1f wait %.2f",slot?s.guestId.load(std::memory_order_relaxed):1u,
+                    double(hold)/1e6/frames,double(acq)/frames,double(wait)/1e6/frames);
+                sched+=item;
+            }
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Bridge ms/frame by kind.method:%s; render handovers %.1f/frame, waiting %.2f ms/frame;%s",used?detail:" none",
+                double(renderYields)/frames,double(renderWait.count())/1e6/frames,sched.c_str());
             renderYields=0;renderWait=std::chrono::nanoseconds{};
             methodTime.fill(std::chrono::nanoseconds{});
             frames=0;since=now;bridgeTime=presentTime=std::chrono::nanoseconds{};bridgeCalls=0;}

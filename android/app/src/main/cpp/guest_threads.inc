@@ -59,6 +59,7 @@ void* guestThreadEntry(void* context){
     stayOnPerformanceCores();
     insideGuestThread=true;
     auto& thread=*static_cast<GuestThread*>(context);
+    schedSlot=claimSchedSlot(thread.id);
     std::unique_lock<MachineMutex> lease(machine);machineLease=&lease;guestThreadId=thread.id;
     State fresh;fresh.esp=thread.stack+(4u<<20)-64;fresh.fs=thread.tib;fresh.load();
     try {
