@@ -30,6 +30,8 @@ public final class GameActivity extends NativeActivity {
     private boolean requested;
     private boolean foreground;
     private TextView status;
+    private TextView speed;
+    private PopupWindow speedWindow;
     private PopupWindow statusWindow;
     private PopupWindow controlsWindow;
     private RacingControlsView touchControls;
@@ -129,6 +131,14 @@ public final class GameActivity extends NativeActivity {
         if(touchControls!=null)touchControls.setGamepadConnected(connected);
         nativeGamepadConnected(connected);
     }
+    private final Runnable updateSpeed = new Runnable() {
+        @Override public void run() {
+            if(!foreground||speed==null)return;
+            float value=nativeSpeed();
+            speed.setText(value>=0?String.format(java.util.Locale.ROOT,"%.0f km/h",value):"");
+            speed.postDelayed(this,250);
+        }
+    };
     private final Runnable updateControlMode = new Runnable() {
         @Override public void run() {
             if(!foreground||touchControls==null)return;
@@ -143,6 +153,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeLanguage(String language);
     private static native void nativeResolution(int width, int height);
     private static native void nativeFrameLimit(int framesPerSecond);
+    private static native float nativeSpeed();
     private static native void nativeWidescreen(boolean enabled);
     private static native void nativeOnlineServer(String host);
     private static native void nativeGamepadConnected(boolean connected);
@@ -238,6 +249,16 @@ public final class GameActivity extends NativeActivity {
         statusWindow = new PopupWindow(status, ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, false);
         statusWindow.setTouchable(false);
+        // Speed under the game's score line, top right: on phones the HUD's own
+        // km/h digits sit under the gear buttons. Own popup like the status text.
+        speed = new TextView(this);
+        speed.setTextColor(Color.WHITE);
+        speed.setShadowLayer(4, 0, 0, Color.BLACK);
+        speed.setTextSize(22);
+        speed.setTypeface(null, android.graphics.Typeface.BOLD);
+        speed.setPadding(12, 4, 12, 4);
+        speedWindow = new PopupWindow(speed, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, false);
+        speedWindow.setTouchable(false);
         touchControls = new RacingControlsView(this, this::setTouchKey, this::showTextInput,this::showTiltOptions,this::showFrameLimitOptions);
         touchControls.setPointer(GameActivity::nativePointer);
         controlsWindow = new PopupWindow(touchControls, ViewGroup.LayoutParams.MATCH_PARENT,
@@ -280,6 +301,11 @@ public final class GameActivity extends NativeActivity {
         if (focused && foreground && controlsWindow != null && !controlsWindow.isShowing()) {
             controlsWindow.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
         }
+        if (focused && foreground && speedWindow != null && !speedWindow.isShowing()) {
+            DisplayMetrics screen = getResources().getDisplayMetrics();
+            speedWindow.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.END,
+                    Math.round(screen.widthPixels * 0.04f), Math.round(screen.heightPixels * 0.16f));
+        }
     }
     // LAN games announce and discover themselves with UDP broadcasts on port 9999;
     // without this lock many devices drop incoming Wi-Fi broadcasts to save power.
@@ -307,6 +333,8 @@ public final class GameActivity extends NativeActivity {
         if (statusWindow != null) statusWindow.dismiss();
         if (touchControls != null) {touchControls.removeCallbacks(updateControlMode);touchControls.releaseAll();}
         if (controlsWindow != null) controlsWindow.dismiss();
+        if (speedWindow != null) speedWindow.dismiss();
+        if (speed != null) speed.removeCallbacks(updateSpeed);
         super.onPause();
     }
     @Override protected void onResume() {
@@ -317,6 +345,7 @@ public final class GameActivity extends NativeActivity {
         updateTiltSensor();
         if(inputManager!=null){inputManager.registerInputDeviceListener(gamepadListener,null);updateGamepads();}
         if(touchControls!=null) {touchControls.removeCallbacks(updateControlMode);touchControls.post(updateControlMode);}
+        if(speed!=null) {speed.removeCallbacks(updateSpeed);speed.post(updateSpeed);}
         boolean allowed = Build.VERSION.SDK_INT >= 30
                 ? Environment.isExternalStorageManager()
                 : checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED

@@ -26,3 +26,5 @@ void typeGuestText(const std::vector<uint32_t>& characters);
 void setGuestLanguage(const char* language);
 void setGuestResolution(unsigned width,unsigned height);
 void setGuestFrameLimit(unsigned framesPerSecond);
+/** Player speed the race HUD shows, km/h; negative when no race HUD ran in the last second. */
+float guestHudSpeedKmh();
