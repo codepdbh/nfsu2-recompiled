@@ -32,7 +32,6 @@
 #include <atomic>
 #include <unistd.h>
 #include <pthread.h>
-#include <sched.h>
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -170,7 +169,12 @@ public:
         waiters_.push_back(&self);
         l.unlock();
         auto spinUntil=queued+(machinePriority?prioritySpinBeforeSleep:spinBeforeSleep);
-        while(owner_.load(std::memory_order_acquire)!=me&&std::chrono::steady_clock::now()<spinUntil)sched_yield();
+        // A yield instruction per iteration, the clock every 32: sched_yield and
+        // clock_gettime were 5% of the render thread's samples while spinning.
+        for(unsigned spins=0;owner_.load(std::memory_order_acquire)!=me;){
+            if((++spins&31u)==0&&std::chrono::steady_clock::now()>=spinUntil)break;
+            asm volatile("yield");
+        }
         l.lock();
         self.cv.wait(l,[&]{return owner_.load(std::memory_order_relaxed)==me;});   // unlock() removed us from the queue and handed over
         depth_=1;took(queued);
