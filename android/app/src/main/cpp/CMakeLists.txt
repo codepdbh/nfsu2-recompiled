@@ -74,7 +74,9 @@ target_include_directories(nfs_guest PRIVATE "${PCRECOMP}/runtime/recomp32" "${G
 target_compile_definitions(nfs_guest PRIVATE RECOMP_STRICT_ICALL RECOMP_LOCAL_REGS RECOMP_X87_WINDOW "RECOMP_MEM_QUAL=")
 # Optimize the ARM64 game while avoiding aliasing assumptions in x86 accesses;
 # retain unwind tables so unsupported HLE paths can exit to the host cleanly.
-target_compile_options(nfs_guest PRIVATE -O2 -w -fwrapv -fno-strict-aliasing -fexceptions -ffp-contract=off
+# NFS_GUEST_OPT: -O2 (default) or -O3 for the lifted game code; gradle -PnfsOpt=O3.
+set(NFS_GUEST_OPT "O2" CACHE STRING "Optimisation level of the lifted game code (O2 or O3)")
+target_compile_options(nfs_guest PRIVATE -${NFS_GUEST_OPT} -w -fwrapv -fno-strict-aliasing -fexceptions -ffp-contract=off
     -include "${CMAKE_CURRENT_SOURCE_DIR}/arm64_guest.h")
 # The ~27,700 lifted functions are internal to the library: hidden visibility
 # turns their cross-file calls from PLT stubs into direct calls, and ThinLTO
