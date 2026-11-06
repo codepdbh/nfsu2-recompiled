@@ -1,5 +1,6 @@
 #include "game_log.h"
 #include "host_performance.h"
+#include <cmath>
 #include <initializer_list>
 #include <set>
 #include <condition_variable>
@@ -63,6 +64,10 @@ namespace {
 std::atomic<uint32_t> displayWidth{1280},displayHeight{720};
 std::atomic<uint32_t> renderWidth{0},renderHeight{0};
 std::atomic<unsigned> frameLimit{0};
+// Player object last seen by the HUD speed readout (arm64_guest.h), and when.
+std::atomic<uint32_t> hudSpeedObject{0};std::atomic<int64_t> hudSpeedSeenMs{0};
+int64_t steadyMs();
+extern "C" void nfs_note_hud_speed(uint32_t object){hudSpeedObject.store(object,std::memory_order_relaxed);hudSpeedSeenMs.store(steadyMs(),std::memory_order_relaxed);}
 std::string hex(uint32_t va) {
     std::ostringstream out; out << "0x" << std::hex << std::setw(8) << std::setfill('0') << va;
     return out.str();
@@ -945,6 +950,14 @@ void setGuestResolution(unsigned width,unsigned height){
     setD3D9RenderSize(width,height);
 #endif
     NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Selected render resolution %ux%u",width,height);
+}
+// Read from the UI thread without the machine lock: one float of guest memory,
+// stale by at most a frame; a torn or missing object only shows nothing.
+float guestHudSpeedKmh(){
+    uint32_t object=hudSpeedObject.load(std::memory_order_relaxed);
+    if(!object||!memory||steadyMs()-hudSpeedSeenMs.load(std::memory_order_relaxed)>1000||!memory->readable(object+0x430,4))return -1;
+    float speed;std::memcpy(&speed,memory->address(object+0x430,4),4);
+    return std::fabs(speed)*3.6f;
 }
 void setGuestFrameLimit(unsigned framesPerSecond){
     frameLimit=(framesPerSecond>=30&&framesPerSecond<=240)?framesPerSecond:0;

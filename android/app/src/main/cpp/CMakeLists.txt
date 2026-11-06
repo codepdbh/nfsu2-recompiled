@@ -103,6 +103,11 @@ elseif(NOT NFSU2_EXE_BUILD STREQUAL "")
   message(FATAL_ERROR "Unknown NFSU2_EXE_BUILD '${NFSU2_EXE_BUILD}': add config/hooks-<build>.txt and its table in src/runtime/widescreen.c")
 endif()
 target_compile_definitions(nfsu2_android PRIVATE RECOMP_STRICT_ICALL RECOMP_X87_WINDOW ${EXE_BUILD_DEFS})
+# HUD speed readout for the on-screen speed (arm64_guest.h). Not located in
+# f4bb0d99 yet: that build simply shows no speed.
+if(NFSU2_EXE_BUILD STREQUAL "")
+  target_compile_definitions(nfs_guest PRIVATE NFS_HUD_SPEED_VA=0x004C68D0u)
+endif()
 if(SERVER_GEN_SOURCES)
     target_compile_definitions(nfsu2_android PRIVATE NFS_SERVER_DLL)
 endif()

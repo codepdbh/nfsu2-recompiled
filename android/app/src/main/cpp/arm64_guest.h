@@ -6,9 +6,18 @@
 // The PC's six-resolution selector cannot describe Android display sizes.
 // Intercept its entry for direct calls as well as dispatch calls; no x86 patch.
 extern int nfs_android_resolution(void);
+// Speed overlay: the HUD speed readout NFS_HUD_SPEED_VA (thiscall, arg = player
+// view) reads fabs(float at +0x430) of the object at [arg+4]; each entry hands
+// that object to the runtime, and GameActivity shows the value under the score.
+#ifdef NFS_HUD_SPEED_VA
+extern void nfs_note_hud_speed(uint32_t object);
+#define NFS_HUD_SPEED_NOTE(va) do { if((va)==NFS_HUD_SPEED_VA) nfs_note_hud_speed(MEM32(MEM32(esp+4)+4)); } while(0)
+#else
+#define NFS_HUD_SPEED_NOTE(va) ((void)0)
+#endif
 #undef RECOMP_ENTER
 #define RECOMP_ENTER(va) do { \
-    g_cur_func=(va); RECOMP_FLAGS_IN(); \
+    g_cur_func=(va); RECOMP_FLAGS_IN(); NFS_HUD_SPEED_NOTE(va); \
     if((va)==0x005BF610u){ \
         RECOMP_REGS_OUT(); \
         if(nfs_android_resolution()){RECOMP_REGS_IN();return;} \
