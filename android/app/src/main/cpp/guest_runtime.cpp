@@ -781,7 +781,20 @@ struct ThunkOp {
     uint8_t cc=0;              // Jcc only: the 0x7c..0x7f opcode byte
     recomp_func_t fn=nullptr;  // Call only: resolved once, reused on every replay
 };
-struct CachedThunk { std::vector<uint8_t> bytes; std::unordered_map<uint32_t,ThunkOp> program; };
+// program: decoded by guest address. ops: the same instructions linked by index
+// (next/taken are positions in ops) so a replay walks an array instead of hashing
+// the pc on every step -- that lookup was a third of the audio/streaming thread.
+struct CachedThunk { std::vector<uint8_t> bytes; std::unordered_map<uint32_t,ThunkOp> program; std::vector<ThunkOp> ops; uint32_t entry=0; };
+void thunkLink(CachedThunk& cached,uint32_t start){
+    std::unordered_map<uint32_t,uint32_t> index;index.reserve(cached.program.size());
+    cached.ops.clear();cached.ops.reserve(cached.program.size());
+    for(const auto& [pc,op]:cached.program){index.emplace(pc,uint32_t(cached.ops.size()));cached.ops.push_back(op);}
+    for(auto& op:cached.ops){
+        if(op.kind!=ThunkOp::Ret)op.next=index.at(op.next);
+        if(op.kind==ThunkOp::Jcc)op.taken=index.at(op.taken);
+    }
+    cached.entry=index.at(start);
+}
 std::unordered_map<uint32_t,CachedThunk> g_thunkCache;
 
 // Decode-time-only bookkeeping: which opcodes are legal next (this is how the original
@@ -880,9 +893,9 @@ void thunkDecodeFrom(uint32_t pc,ThunkParse state,uint32_t start,CachedThunk& ca
 
 void thunkReplay(const CachedThunk& cached,uint32_t start){
     uint32_t originalEsi=g_esi,esi=0,eax=g_eax,ecx=g_ecx,originalEsp=g_esp;int comparison=0;
-    uint32_t pc=start;
+    const ThunkOp* ops=cached.ops.data();uint32_t pc=cached.entry;
     for(unsigned steps=0;steps<4096;++steps){
-        const ThunkOp& op=cached.program.at(pc);
+        const ThunkOp& op=ops[pc];
         switch(op.kind){
         case ThunkOp::Skip: pc=op.next; break;
         case ThunkOp::AddEsi: esi+=op.a; pc=op.next; break;
@@ -939,6 +952,7 @@ void dynamicThunk(){
     // the integrity check below only needs to cover bytes this decode actually read.
     uint32_t length=highestEnd-start;
     cached.bytes.assign(static_cast<const uint8_t*>(ptr(start,length)),static_cast<const uint8_t*>(ptr(start,length))+length);
+    thunkLink(cached,start);
     static unsigned completed=0;if(++completed<=3)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Generated x86 callback decoded: %08x, %zu operations",start,cached.program.size());
     thunkReplay(cached,start);
     g_thunkCache.emplace(start,std::move(cached));
