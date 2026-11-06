@@ -279,7 +279,7 @@ def append_tsv(s: dict):
 # --- simpleperf --------------------------------------------------------------
 
 def run_simpleperf(args, data: Path, seconds: float):
-    cmd = [sys.executable, "-I", f"{NDK}/simpleperf/app_profiler.py", "-p", PACKAGE, "--compile_java_code",
+    cmd = [sys.executable, f"{NDK}/simpleperf/app_profiler.py", "-p", PACKAGE, "--compile_java_code",
            "-r", f"-e task-clock:u -f 1000 --duration {int(seconds)} -g", "-o", str(data)]
     if args.lib:
         cmd += ["-lib", args.lib]
@@ -291,10 +291,10 @@ def run_simpleperf(args, data: Path, seconds: float):
 
 def report_simpleperf(args, data: Path, text: Path):
     env = dict(os.environ, ANDROID_SERIAL=args.serial)
-    r = subprocess.run([sys.executable, "-I", f"{NDK}/simpleperf/report.py", "-i", str(data), "--sort", "comm,dso,symbol", "-n", "--full-callgraph" if False else "-g"],
+    r = subprocess.run([sys.executable, f"{NDK}/simpleperf/report.py", "-i", str(data), "--sort", "comm,dso,symbol", "-n", "--full-callgraph" if False else "-g"],
                        capture_output=True, text=True, env=env, timeout=600, encoding="utf-8", errors="replace")
     # Flat per-symbol view is what we compare between steps; keep the first 400 lines.
-    flat = subprocess.run([sys.executable, "-I", f"{NDK}/simpleperf/report.py", "-i", str(data), "--sort", "comm,symbol", "-n"],
+    flat = subprocess.run([sys.executable, f"{NDK}/simpleperf/report.py", "-i", str(data), "--sort", "comm,symbol", "-n"],
                           capture_output=True, text=True, env=env, timeout=600, encoding="utf-8", errors="replace")
     text.write_text("\n".join(flat.stdout.splitlines()[:400]) + "\n\n=== call graph (head) ===\n" + "\n".join(r.stdout.splitlines()[:300]))
     print("== simpleperf report:", text)
