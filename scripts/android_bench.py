@@ -74,7 +74,7 @@ def one_run(args, out: Path, run: int) -> dict:
     if not args.no_launch:
         if args.apk:
             print(f"== installing {args.apk}")
-            adb(args, "install", "-r", str(args.apk), check=True)
+            adb(args, "install", "-r", str(args.apk), check=True, timeout=1200)  # 140 MB over a slow Wi-Fi link
         adb(args, "shell", "am", "force-stop", PACKAGE)
         time.sleep(1.5)
         adb(args, "logcat", "-c")
@@ -277,28 +277,37 @@ def append_tsv(s: dict):
 
 
 # --- simpleperf --------------------------------------------------------------
+# Driven by hand rather than through app_profiler.py: that script pulls every
+# library of the process into a binary_cache over adb (minutes over Wi-Fi) and
+# hung outright here. `record --app` on a debuggable app needs no root.
+
+DEVICE_SIMPLEPERF = "/data/local/tmp/simpleperf"
+DEVICE_DATA = "/data/local/tmp/nfsu2-perf.data"
+
 
 def run_simpleperf(args, data: Path, seconds: float):
-    cmd = [sys.executable, f"{NDK}/simpleperf/app_profiler.py", "-p", PACKAGE, "--compile_java_code",
-           "-r", f"-e task-clock:u -f 1000 --duration {int(seconds)} -g", "-o", str(data)]
-    if args.lib:
-        cmd += ["-lib", args.lib]
-    env = dict(os.environ, ANDROID_SERIAL=args.serial)
-    r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=seconds + 120, encoding="utf-8", errors="replace")
-    if r.returncode:
-        print("!! simpleperf failed:", (r.stderr or r.stdout).strip()[-800:])
+    if "pushed" not in adb(args, "shell", "ls", DEVICE_SIMPLEPERF):
+        adb(args, "push", f"{NDK}/simpleperf/bin/android/arm64/simpleperf", DEVICE_SIMPLEPERF, timeout=300)
+        adb(args, "shell", "chmod", "755", DEVICE_SIMPLEPERF)
+    adb(args, "shell", "rm", "-f", DEVICE_DATA)
+    out = adb(args, "shell", DEVICE_SIMPLEPERF, "record", "--app", PACKAGE, "-e", "task-clock:u", "-f", "1000",
+              "--duration", str(int(seconds)), "-g", "-o", DEVICE_DATA, timeout=seconds + 120)
+    if "Samples recorded" not in out and "samples" not in out.lower():
+        print("!! simpleperf record said:", out.strip()[-600:])
+    adb(args, "pull", DEVICE_DATA, str(data), timeout=600)
 
 
 def report_simpleperf(args, data: Path, text: Path):
-    env = dict(os.environ, ANDROID_SERIAL=args.serial)
-    r = subprocess.run([sys.executable, f"{NDK}/simpleperf/report.py", "-i", str(data), "--sort", "comm,dso,symbol", "-n", "--full-callgraph" if False else "-g"],
-                       capture_output=True, text=True, env=env, timeout=600, encoding="utf-8", errors="replace")
-    # Flat per-symbol view is what we compare between steps; keep the first 400 lines.
-    flat = subprocess.run([sys.executable, f"{NDK}/simpleperf/report.py", "-i", str(data), "--sort", "comm,symbol", "-n"],
-                          capture_output=True, text=True, env=env, timeout=600, encoding="utf-8", errors="replace")
-    text.write_text("\n".join(flat.stdout.splitlines()[:400]) + "\n\n=== call graph (head) ===\n" + "\n".join(r.stdout.splitlines()[:300]))
+    exe = f"{NDK}/simpleperf/bin/windows/x86_64/simpleperf.exe"
+    sym = ["--symdir", args.lib] if args.lib else []
+    sections = []
+    for title, sort, limit in (("threads", "comm", 40), ("thread,dso", "comm,dso", 60), ("thread,symbol", "comm,symbol", 400), ("symbol", "symbol", 200)):
+        r = subprocess.run([exe, "report", "-i", str(data), "--sort", sort, "-n", *sym], capture_output=True, text=True, timeout=900, encoding="utf-8", errors="replace")
+        body = (r.stdout or r.stderr).splitlines()
+        sections.append(f"=== by {title} ===\n" + "\n".join(body[:limit]))
+    text.write_text("\n\n".join(sections))
     print("== simpleperf report:", text)
-    for line in flat.stdout.splitlines()[:45]:
+    for line in sections[0].splitlines()[:14] + ["..."] + sections[3].splitlines()[:40]:
         print("   " + line)
 
 
