@@ -55,7 +55,10 @@ std::atomic<bool> surfaceRequested{false},surfaceAvailable{false};
 void* pointer(uint32_t address){return address?static_cast<uint8_t*>(guestBase)+address:nullptr;}
 void write(uint32_t address,uint32_t value){if(!address)throw std::runtime_error("Null D3D9 output");std::memcpy(pointer(address),&value,4);}
 uint32_t wrap(IUnknown* native,Kind kind){
-    if(!native)return 0;auto previous=addresses.find(native);if(previous!=addresses.end()){++objects.at(previous->second).references;return previous->second;}
+    // The wrapper owns exactly one native reference while the guest holds any
+    // (see AddRef/Release below); a native call returning a known object
+    // handed us another one, so give it back here.
+    if(!native)return 0;auto previous=addresses.find(native);if(previous!=addresses.end()){auto& known=objects.at(previous->second);if(known.references++==0)return previous->second;native->Release();return previous->second;}
     static constexpr uint32_t sizes[]={0,17,119,22,22,17,14,14,5,5,5,6,8,10,22,11};
     uint32_t count=sizes[static_cast<uint32_t>(kind)];
     uint32_t table=allocateGuest(count*4),object=allocateGuest(4);
@@ -100,7 +103,29 @@ void attachTextureSurface(uint32_t texture,uint32_t surface){
 // The copy does not call AddRef, so account for that owned descriptor here.
 void retainInitialDepthDescriptor(uint32_t outputAddress,uint32_t surfaceAddress){
     if(outputAddress!=0x870854||!surfaceAddress)return;
-    auto& surface=objects.at(surfaceAddress);surface.native->AddRef();++surface.references;
+    auto& surface=objects.at(surfaceAddress);if(surface.references++==0)surface.native->AddRef();
+}
+// Shader constant deduplication. DXVK drops redundant render/sampler/texture
+// state but forwards every SetVertexShaderConstantF/SetPixelShaderConstantF;
+// the game's effect passes re-upload the same matrices many times a frame.
+// Skipped while a state block is being recorded (the call would be recorded,
+// not applied) and flushed when a state block is applied or the device reset.
+struct ShaderConstants{static constexpr uint32_t capacity=256;float values[capacity*4];bool known[capacity];};
+ShaderConstants vertexConstants{},pixelConstants{};
+bool recordingStateBlock=false;
+uint64_t constantSets=0,constantHits=0;
+void invalidateShaderConstants(){std::fill(std::begin(vertexConstants.known),std::end(vertexConstants.known),false);std::fill(std::begin(pixelConstants.known),std::end(pixelConstants.known),false);}
+template<class Set> HRESULT setShaderConstants(ShaderConstants& shadow,uint32_t start,const float* data,uint32_t count,Set set){
+    ++constantSets;
+    bool tracked=data&&count&&start<ShaderConstants::capacity&&count<=ShaderConstants::capacity-start&&!recordingStateBlock;
+    if(tracked){
+        bool same=true;
+        for(uint32_t i=0;same&&i<count;++i)same=shadow.known[start+i]&&std::memcmp(shadow.values+(start+i)*4,data+i*4,16)==0;
+        if(same){++constantHits;return D3D_OK;}
+    }
+    HRESULT status=set();
+    if(tracked&&SUCCEEDED(status)){std::memcpy(shadow.values+start*4,data,count*16);std::fill(shadow.known+start,shadow.known+start+count,true);}
+    return status;
 }
 float floatValue(uint32_t bits){float value;std::memcpy(&value,&bits,4);return value;}
 uint32_t floatBits(float value){uint32_t bits;std::memcpy(&bits,&value,4);return bits;}
@@ -159,7 +184,7 @@ void shutdownD3D9Bridge(){
     for(auto& lock:resourceLocks)freeGuest(lock.second.guest);resourceLocks.clear();
     for(uint32_t kind=15;kind;--kind)for(auto it=objects.begin();it!=objects.end();){
         if(static_cast<uint32_t>(it->second.kind)!=kind){++it;continue;}
-        auto object=it->second;for(uint32_t n=0;n<object.references;++n)object.native->Release();
+        auto object=it->second;if(object.references)object.native->Release();
         forgetObjects();
         uint32_t table;std::memcpy(&table,pointer(it->first),4);freeGuest(table);freeGuest(it->first);addresses.erase(object.native);it=objects.erase(it);
     }
@@ -193,6 +218,7 @@ void noteVertexDeclaration(const D3DVERTEXELEMENT9* elements){
 // crash (null dereference, Mali reports); until a Reset succeeds the device reads as
 // lost and needing a reset, which the game handles as on Windows.
 bool deviceResetPending=false;
+void d3d9ShaderConstantStats(uint64_t* sets,uint64_t* hits){*sets=constantSets;*hits=constantHits;constantSets=constantHits=0;}
 uint32_t dispatchGuestD3D9(uint32_t token,const uint32_t* args,uint32_t* argumentCount){
     uint32_t kind=(token-methodBase)/4096,method=((token-methodBase)%4096)/16;
     Object* entry=findObject(args[0]);
@@ -220,7 +246,11 @@ uint32_t dispatchGuestD3D9(uint32_t token,const uint32_t* args,uint32_t* argumen
     // delegate AddRef/Release to their parent texture, so native counts can
     // include ownership through a different guest object. Returning them made
     // the game's release-until-zero loop call an already freed surface wrapper.
-    if(method==1){*argumentCount=1;object->AddRef();return ++entry->references;}
+    // The wrapper holds a single native reference for as long as the guest
+    // count is non-zero: the game AddRefs/Releases its textures thousands of
+    // times a frame (D3DX effect passes), and each native call went through
+    // DXVK's refcount on the texture and its subresources (~1 ms/frame).
+    if(method==1){*argumentCount=1;if(entry->references++==0)object->AddRef();return entry->references;}
     if(method==2){*argumentCount=1;
         // The game's detail rebuild releases the cube parent after every face
         // lookup, although only its first Release owns a parent reference.
@@ -229,14 +259,14 @@ uint32_t dispatchGuestD3D9(uint32_t token,const uint32_t* args,uint32_t* argumen
             if(entry->children)return 0;
             throw std::runtime_error("D3D9 COM Release without owned reference");
         }
-        auto nativeReferences=object->Release();uint32_t references=--entry->references;
-        if(kind==5)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Surface Release object=%08x guestRefs=%u nativeRefs=%u",args[0],references,uint32_t(nativeReferences));
-        if(!references){
-            if(entry->children)return uint32_t(nativeReferences);
-            auto parent=entry->parent;retireGuestObject(args[0]);
-            if(parent){auto owner=objects.find(parent);if(owner!=objects.end()&&!--owner->second.children&&!owner->second.references)retireGuestObject(parent);}
-        }
-        return references;}
+        uint32_t references=--entry->references;
+        if(references)return references;
+        auto nativeReferences=object->Release();
+        if(kind==5)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Surface Release object=%08x guestRefs=0 nativeRefs=%u",args[0],uint32_t(nativeReferences));
+        if(entry->children)return uint32_t(nativeReferences);
+        auto parent=entry->parent;retireGuestObject(args[0]);
+        if(parent){auto owner=objects.find(parent);if(owner!=objects.end()&&!--owner->second.children&&!owner->second.references)retireGuestObject(parent);}
+        return 0;}
     if(method==0){
         *argumentCount=3;IUnknown* result=nullptr;HRESULT status=object->QueryInterface(*static_cast<const GUID*>(pointer(args[1])),reinterpret_cast<void**>(&result));
         if(SUCCEEDED(status))write(args[2],wrap(result,entry->kind));else write(args[2],0);return status;
@@ -286,7 +316,7 @@ uint32_t dispatchGuestD3D9(uint32_t token,const uint32_t* args,uint32_t* argumen
     if(kind==2){auto device=static_cast<IDirect3DDevice9*>(object);switch(method){
         case 9:{*argumentCount=2;D3DDEVICE_CREATION_PARAMETERS p{};HRESULT status=device->GetCreationParameters(&p);if(SUCCEEDED(status)){write(args[1],p.AdapterOrdinal);write(args[1]+4,p.DeviceType);write(args[1]+8,0xf0000301);write(args[1]+12,p.BehaviorFlags);}return status;}
         case 13:{*argumentCount=3;auto p=presentation(args[1]);IDirect3DSwapChain9* result=nullptr;HRESULT status=device->CreateAdditionalSwapChain(&p,&result);write(args[2],SUCCEEDED(status)?wrap(result,Kind::SwapChain):0);return status;}
-        case 16:{*argumentCount=2;auto p=presentation(args[1]);HRESULT status=D3DERR_DEVICELOST;
+        case 16:{*argumentCount=2;auto p=presentation(args[1]);HRESULT status=D3DERR_DEVICELOST;invalidateShaderConstants();
             // DXVK throws (DxvkError) when it cannot rebuild the swap chain; Windows
             // would report a lost device, which the game retries (Mali G615 report).
             // The old Android window can stay busy for a moment: retry once before giving up.

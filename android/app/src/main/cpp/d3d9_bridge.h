@@ -11,3 +11,5 @@ bool d3d9RequestsSurface();
 void acknowledgeD3D9Surface(bool available);
 uint32_t createGuestD3D9(uint32_t sdk);
 uint32_t dispatchGuestD3D9(uint32_t token,const uint32_t* args,uint32_t* argumentCount);
+// SetVertexShaderConstantF/SetPixelShaderConstantF calls and the ones skipped as duplicates since the last call; resets the counters.
+void d3d9ShaderConstantStats(uint64_t* sets,uint64_t* hits);

@@ -498,7 +498,9 @@ void d3dDispatch(){
                     double(hold)/1e6/frames,double(acq)/frames,double(wait)/1e6/frames);
                 sched+=item;
             }
-            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Bridge ms/frame by kind.method:%s; render handovers %.1f/frame, waiting %.2f ms/frame;%s",used?detail:" none",
+            uint64_t constantSets=0,constantHits=0;d3d9ShaderConstantStats(&constantSets,&constantHits);
+            NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Bridge ms/frame by kind.method:%s; shader constants %.0f/frame, %.0f%% duplicate; render handovers %.1f/frame, waiting %.2f ms/frame;%s",used?detail:" none",
+                double(constantSets)/frames,constantSets?100.0*double(constantHits)/double(constantSets):0.0,
                 double(renderYields)/frames,double(renderWait.count())/1e6/frames,sched.c_str());
             renderYields=0;renderWait=std::chrono::nanoseconds{};
             methodTime.fill(std::chrono::nanoseconds{});
