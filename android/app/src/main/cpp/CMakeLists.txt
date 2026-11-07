@@ -12,9 +12,13 @@ endif()
 # -PnfsCpu=<cpu> (gradle) tunes every native target, DXVK included, for one
 # SoC: e.g. cortex-a720 for the Dimensity 8400 (ARMv9.2-A). Such a build does
 # not run on older cores. Empty = the portable ARMv8-A baseline.
+# SVE/SVE2 explicitly off: an ARMv9 -mcpu enables them as features, so the
+# compiler may autovectorize ordinary loops with SVE instructions, but Android
+# kernels commonly leave SVE disabled for userspace even on cores that
+# implement it -- that crashed this build at launch (SIGILL) on a real phone.
 set(NFS_GUEST_CPU "" CACHE STRING "clang -mcpu value for all native code (empty = baseline)")
 if(NFS_GUEST_CPU)
-    add_compile_options("-mcpu=${NFS_GUEST_CPU}")
+    add_compile_options("-mcpu=${NFS_GUEST_CPU}+nosve+nosve2+nosve2-bitperm")
 endif()
 add_library(native_app_glue STATIC "${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c")
 target_include_directories(native_app_glue PUBLIC "${ANDROID_NDK}/sources/android/native_app_glue")
