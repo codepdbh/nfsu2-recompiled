@@ -57,6 +57,8 @@ def main():
     ap.add_argument("--perf", action="store_true", help="run simpleperf over the window")
     ap.add_argument("--lib", help="directory with the unstripped libnfsu2_android.so for simpleperf symbolization")
     ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--pgo-dump", metavar="DIR", help="instrumented build (-PnfsPgo=generate): after the window, make the game write its "
+                    "profile and pull the .profraw files into DIR")
     args = ap.parse_args()
 
     out = ROOT / "work" / "bench"
@@ -111,6 +113,8 @@ def one_run(args, out: Path, run: int) -> dict:
     xruns_after = last_xruns(args, pid)
     if gas_thread:
         gas_thread.join(timeout=5)
+    if args.pgo_dump:
+        pull_pgo_profile(args, pid, Path(args.pgo_dump))
     if not args.keep and not args.no_launch:
         adb(args, "shell", "am", "force-stop", PACKAGE)
 
@@ -230,6 +234,23 @@ def collect(args, pid: int, start: float, end: float) -> list:
             current.update(handovers=float(h.group(1)), waiting_ms=float(h.group(2)))
             current["sched"] = {s.group(1): dict(hold=float(s.group(2)), acq=float(s.group(3)), wait=float(s.group(4))) for s in SCHED.finditer(line)}
     return samples
+
+
+PGO_DIR = f"/sdcard/Android/data/{PACKAGE}/files/pgo"
+PGO_WRITTEN = re.compile(r"PGO profile written: status (-?\d+)")
+
+
+def pull_pgo_profile(args, pid: int, into: Path):
+    # main.cpp watches for the flag once a second and writes default_<hash>.profraw next to it.
+    adb(args, "shell", "touch", f"{PGO_DIR}/dump")
+    if not wait_for_line(args, pid, PGO_WRITTEN, 60):
+        print("!! the game never reported a PGO profile write (not an instrumented build?)")
+        return
+    into.mkdir(parents=True, exist_ok=True)
+    names = [n for n in adb(args, "shell", "ls", PGO_DIR).split() if n.endswith(".profraw")]
+    for name in names:
+        adb(args, "pull", f"{PGO_DIR}/{name}", str(into / name), timeout=600)
+        print("   pulled", name, (into / name).stat().st_size, "bytes")
 
 
 def last_xruns(args, pid: int):

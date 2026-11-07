@@ -141,6 +141,34 @@ if(NFS_GUEST_FAST)
         target_compile_options(${target} PRIVATE -fomit-frame-pointer)
     endforeach()
 endif()
+# Instrumented profile-guided optimisation (the NDK ships no llvm-profgen, so
+# sample-based AutoFDO is out). gradle -PnfsPgo=generate builds an instrumented
+# APK that writes <external files>/pgo/default_<hash>.profraw when the file
+# <external files>/pgo/dump appears (scripts/android_bench.py --pgo-dump);
+# llvm-profdata merge -output=nfsu2.profdata *.profraw, then
+# -PnfsPgo=use -PnfsPgoProfile=<path>. generate and use must agree on every
+# other flag (NFS_GUEST_CPU/FAST/OPT, lift output): the profile is keyed by
+# function name and control-flow hash and silently drops mismatches.
+set(NFS_PGO "" CACHE STRING "Profile-guided optimisation: empty, generate or use")
+set(NFS_PGO_PROFILE "" CACHE FILEPATH "Merged .profdata for NFS_PGO=use")
+if(NFS_PGO STREQUAL "generate")
+    foreach(target nfs_guest nfsu2_android)
+        target_compile_options(${target} PRIVATE -fprofile-generate -fprofile-update=atomic)
+    endforeach()
+    target_compile_definitions(nfsu2_android PRIVATE NFS_PGO_GENERATE)
+    target_link_options(nfsu2_android PRIVATE -fprofile-generate)
+elseif(NFS_PGO STREQUAL "use")
+    if(NOT EXISTS "${NFS_PGO_PROFILE}")
+        message(FATAL_ERROR "NFS_PGO=use needs NFS_PGO_PROFILE=<merged .profdata>")
+    endif()
+    foreach(target nfs_guest nfsu2_android)
+        target_compile_options(${target} PRIVATE "-fprofile-use=${NFS_PGO_PROFILE}"
+            -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date -Wno-profile-instr-missing -Wno-backend-plugin)
+    endforeach()
+    target_link_options(nfsu2_android PRIVATE "-fprofile-use=${NFS_PGO_PROFILE}")
+elseif(NOT NFS_PGO STREQUAL "")
+    message(FATAL_ERROR "NFS_PGO must be empty, generate or use")
+endif()
 target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio dl)
 if(NFS_GUEST_LTO)
     target_link_options(nfsu2_android PRIVATE -flto=thin "-Wl,--thinlto-jobs=4"
