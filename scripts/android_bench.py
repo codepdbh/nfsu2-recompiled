@@ -27,8 +27,10 @@ import argparse, json, os, re, statistics, subprocess, sys, threading, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ADB = os.environ.get("ADB", "C:/Android/Sdk/platform-tools/adb.exe")
-NDK = os.environ.get("ANDROID_NDK", "C:/Android/Sdk/ndk/28.2.13676358")
+# Tools are taken from PATH unless ADB/ANDROID_NDK point elsewhere; --serial picks the
+# device when more than one is attached (or set ANDROID_SERIAL).
+ADB = os.environ.get("ADB", "adb")
+NDK = os.environ.get("ANDROID_NDK", "")
 PACKAGE = "com.nfsu2.androidevolved"
 GAME_PROCESS = PACKAGE + ":game"
 ACTIVITY = PACKAGE + "/.GameActivity"
@@ -41,7 +43,8 @@ AUDIO = re.compile(r"Audio health: xruns=(-?\d+)")
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL", "192.168.3.44:45109"))
+    ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL", ""),
+                    help="device serial; empty uses the only attached device")
     ap.add_argument("--label", required=True, help="name of this configuration (goes into the TSV)")
     ap.add_argument("--apk", help="install this APK first (adb install -r)")
     ap.add_argument("--menu", default=os.environ.get("NFSU2_BENCH_MENU", ""),
@@ -309,9 +312,22 @@ DEVICE_SIMPLEPERF = "/data/local/tmp/simpleperf"
 DEVICE_DATA = "/data/local/tmp/nfsu2-perf.data"
 
 
+def ndk_simpleperf(*parts: str) -> str:
+    """Path inside the NDK's simpleperf directory; --perf needs ANDROID_NDK set."""
+    if not NDK:
+        sys.exit("--perf needs the NDK: set ANDROID_NDK to its root")
+    return str(Path(NDK, "simpleperf", *parts))
+
+
+def host_simpleperf() -> str:
+    host = {"win32": ("windows/x86_64", "simpleperf.exe"), "darwin": ("darwin/x86_64", "simpleperf")}
+    directory, name = host.get(sys.platform, ("linux/x86_64", "simpleperf"))
+    return ndk_simpleperf("bin", *directory.split("/"), name)
+
+
 def run_simpleperf(args, data: Path, seconds: float):
     if "pushed" not in adb(args, "shell", "ls", DEVICE_SIMPLEPERF):
-        adb(args, "push", f"{NDK}/simpleperf/bin/android/arm64/simpleperf", DEVICE_SIMPLEPERF, timeout=300)
+        adb(args, "push", ndk_simpleperf("bin", "android", "arm64", "simpleperf"), DEVICE_SIMPLEPERF, timeout=300)
         adb(args, "shell", "chmod", "755", DEVICE_SIMPLEPERF)
     adb(args, "shell", "rm", "-f", DEVICE_DATA)
     out = adb(args, "shell", DEVICE_SIMPLEPERF, "record", "--app", PACKAGE, "-e", "task-clock:u", "-f", "1000",
@@ -322,7 +338,7 @@ def run_simpleperf(args, data: Path, seconds: float):
 
 
 def report_simpleperf(args, data: Path, text: Path):
-    exe = f"{NDK}/simpleperf/bin/windows/x86_64/simpleperf.exe"
+    exe = host_simpleperf()
     sym = ["--symdir", args.lib] if args.lib else []
     sections = []
     for title, sort, limit in (("threads", "comm", 40), ("thread,dso", "comm,dso", 60), ("thread,symbol", "comm,symbol", 400), ("symbol", "symbol", 200)):
