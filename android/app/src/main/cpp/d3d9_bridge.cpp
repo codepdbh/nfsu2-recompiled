@@ -81,9 +81,9 @@ template<class T>bool kindMatches(Kind kind){
     else return false;
 }
 template<class T>T* nativeObject(uint32_t address){
-    if(!address)return nullptr;auto found=objects.find(address);if(found==objects.end())throw std::runtime_error("Invalid D3D9 resource handle");
-    if(kindMatches<T>(found->second.kind))return static_cast<T*>(found->second.native);
-    auto native=dynamic_cast<T*>(found->second.native);if(!native)throw std::runtime_error("D3D9 resource interface mismatch");return native;
+    if(!address)return nullptr;Object* found=findObject(address);if(!found)throw std::runtime_error("Invalid D3D9 resource handle");
+    if(kindMatches<T>(found->kind))return static_cast<T*>(found->native);
+    auto native=dynamic_cast<T*>(found->native);if(!native)throw std::runtime_error("D3D9 resource interface mismatch");return native;
 }
 uint32_t wrapTexture(IDirect3DBaseTexture9* texture){if(!texture)return 0;switch(texture->GetType()){case D3DRTYPE_TEXTURE:return wrap(texture,Kind::Texture);case D3DRTYPE_CUBETEXTURE:return wrap(texture,Kind::Cube);case D3DRTYPE_VOLUMETEXTURE:return wrap(texture,Kind::VolumeTexture);default:throw std::runtime_error("Unknown D3D9 base texture type");}}
 void retireGuestObject(uint32_t address){

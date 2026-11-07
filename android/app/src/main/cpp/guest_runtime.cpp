@@ -32,6 +32,7 @@
 #include <atomic>
 #include <unistd.h>
 #include <pthread.h>
+#include <sched.h>
 #include <filesystem>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -169,11 +170,12 @@ public:
         waiters_.push_back(&self);
         l.unlock();
         auto spinUntil=queued+(machinePriority?prioritySpinBeforeSleep:spinBeforeSleep);
-        // A yield instruction per iteration, the clock every 32: sched_yield and
-        // clock_gettime were 5% of the render thread's samples while spinning.
+        // sched_yield per iteration (a bare yield instruction kept the core from
+        // the thread being waited for and the clock read became 23% of the
+        // render thread's samples); the clock is read every 8 iterations.
         for(unsigned spins=0;owner_.load(std::memory_order_acquire)!=me;){
-            if((++spins&31u)==0&&std::chrono::steady_clock::now()>=spinUntil)break;
-            asm volatile("yield");
+            if((++spins&7u)==0&&std::chrono::steady_clock::now()>=spinUntil)break;
+            sched_yield();
         }
         l.lock();
         self.cv.wait(l,[&]{return owner_.load(std::memory_order_relaxed)==me;});   // unlock() removed us from the queue and handed over
@@ -1041,11 +1043,12 @@ extern "C" recomp_func_t recomp_lookup_manual(uint32_t va) {
 }
 extern "C" recomp_func_t recomp_lookup_import(uint32_t va) {
     checkGuestProgress();
-    if(va>=soundMethodBase+0x1000&&va<soundMethodBase+0x3000&&!(va%16)){soundToken=va;return soundDispatch;}
-    if(va>=inputMethodBase+0x1000&&va<inputMethodBase+0x5000&&!(va%16)){inputToken=va;return inputDispatch;}  // kinds 1-4: DirectInput, keyboard, mouse, gamepad
 #if defined(__ANDROID__) || defined(NFS_D3D9_BACKEND)
+    // First: ~45k of the ~50k import calls of a race frame are D3D9 methods.
     if(va>=0x7e001000u&&va<0x7e010000u&&!(va%16)){d3dToken=va;return d3dDispatch;}
 #endif
+    if(va>=soundMethodBase+0x1000&&va<soundMethodBase+0x3000&&!(va%16)){soundToken=va;return soundDispatch;}
+    if(va>=inputMethodBase+0x1000&&va<inputMethodBase+0x5000&&!(va%16)){inputToken=va;return inputDispatch;}  // kinds 1-4: DirectInput, keyboard, mouse, gamepad
     if (va<importBase || (va-importBase)%16) return nullptr;
     uint32_t index=(va-importBase)/16;
     if (index>=imports.size()) return nullptr;
@@ -1058,8 +1061,18 @@ extern "C" recomp_func_t nfs_icall_resolve(uint32_t va) {
     // Sound, input, D3D9 and import stubs (0x7c000000..0x7fffffff): nothing lifted
     // or overridden lives there, so the vtable calls of a frame skip both probes.
     if(va-0x7c000000u<0x04000000u)return recomp_lookup_import(va);
-    recomp_func_t fn=recomp_lookup_manual(va);if(!fn)fn=recomp_lookup(va);
-    return fn?fn:recomp_lookup_import(va);
+    recomp_func_t fn=recomp_lookup_manual(va);if(fn)return fn;
+    // Direct-mapped cache of lifted targets: the vtable calls of a frame repeat
+    // a few hundred addresses tens of thousands of times, each a hash probe.
+    // Only static lifted functions are cached (manual lookups come first and
+    // may change: test callbacks, generated thunks in the heap arena).
+    struct Entry{uint32_t va;recomp_func_t fn;};
+    static Entry cache[4096]{};
+    Entry& entry=cache[(va^(va>>12))&4095u];
+    if(entry.va==va)return entry.fn;
+    fn=recomp_lookup(va);
+    if(fn){entry.va=va;entry.fn=fn;return fn;}
+    return recomp_lookup_import(va);
 }
 extern "C" void recomp_unresolved(const char* kind,uint32_t va,uint32_t from) {
     if(from==0x00725520u&&memory){
