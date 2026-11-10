@@ -11,6 +11,7 @@
 struct ANativeWindow {Display* display;Window window;uint32_t width,height;};
 #endif
 #include <mutex>
+#include <vector>
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
@@ -32,6 +33,13 @@ uint32_t renderWidth=0,renderHeight=0;
 // window's own size. The swap chain must use it: a screen-sized swap chain on
 // smaller buffers is cropped to their top-left corner by Android.
 uint32_t bufferWidth=0,bufferHeight=0;
+#ifdef __ANDROID__
+// Each Vulkan surface holds a reference to the window it was made from until DXVK
+// destroys it. Android frees the window when the app goes to the background; the
+// presenter destroys the old surface only on the next Present, and doing that on
+// a freed window crashed inside the driver.
+std::vector<std::pair<VkSurfaceKHR,ANativeWindow*>> surfaceWindows;
+#endif
 HMONITOR monitor(){return reinterpret_cast<HMONITOR>(uintptr_t{1});}
 // The Vulkan driver DXVK talks to: the linked system loader, or an imported
 // adrenotools driver chosen in the launcher (set before the device exists).
@@ -48,6 +56,13 @@ extern "C" void dxvkAndroidSetRenderSize(uint32_t width,uint32_t height){std::lo
        ANativeWindow_setBuffersGeometry(currentWindow,width,height,0)==0){bufferWidth=width;bufferHeight=height;}
 #endif
 }
+#ifdef __ANDROID__
+extern "C" void dxvkAndroidSurfaceDestroyed(VkSurfaceKHR surface){
+    std::lock_guard<std::mutex> guard(windowMutex);
+    for(auto entry=surfaceWindows.begin();entry!=surfaceWindows.end();++entry)
+        if(entry->first==surface){ANativeWindow_release(entry->second);surfaceWindows.erase(entry);return;}
+}
+#endif
 extern "C" HWND dxvkAndroidGetWindowHandle(){std::lock_guard<std::mutex> guard(windowMutex);return currentHandle;}
 extern "C" void dxvkAndroidSetWindow(ANativeWindow* window){
     std::lock_guard<std::mutex> guard(windowMutex);
@@ -98,7 +113,9 @@ VkResult createSurface(HWND window,const Rc<vk::InstanceFn>& instance,VkSurfaceK
     auto create=reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(dxvkAndroidGetInstanceProcAddr()(instance->instance(),"vkCreateAndroidSurfaceKHR"));
     if(!create)return VK_ERROR_EXTENSION_NOT_PRESENT;
     VkAndroidSurfaceCreateInfoKHR info{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};info.window=currentWindow;
-    return create(instance->instance(),&info,nullptr,surface);
+    VkResult result=create(instance->instance(),&info,nullptr,surface);
+    if(result==VK_SUCCESS){ANativeWindow_acquire(currentWindow);surfaceWindows.emplace_back(*surface,currentWindow);}
+    return result;
 #else
     auto create=reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(vkGetInstanceProcAddr(instance->instance(),"vkCreateXlibSurfaceKHR"));
     if(!create)return VK_ERROR_EXTENSION_NOT_PRESENT;

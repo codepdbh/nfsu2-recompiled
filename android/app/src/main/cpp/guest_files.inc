@@ -56,13 +56,22 @@ void readFile(){
     // rest of its buffer as loaded data (chunk walks and string reads off the end of
     // guest memory a few seconds after start or while streaming the world).
     if(arg(3))write32(arg(3),0);
-    auto* target=static_cast<uint8_t*>(ptr(arg(1),arg(2)));uint32_t total=0;
+    auto* target=static_cast<uint8_t*>(ptr(arg(1),arg(2)));uint32_t total=0;off_t start=::lseek(file->second,0,SEEK_CUR);
     while(total<arg(2)){
         ssize_t count=::read(file->second,target+total,arg(2)-total);
         if(count<0){if(errno==EINTR)continue;lastError=fileError();ret(0,5);return;}
         if(!count)break;
         total+=uint32_t(count);
     }
+    // Reads that stop before the end of the file, for crash reports where the game
+    // then walked data it did not get (MW intro cinematics on a Moto g54, U2 0x5811C0).
+    // Reading past the end, which the games do all the time, is not logged.
+    struct stat status{};
+    if(total<arg(2)&&!fstat(file->second,&status)&&start>=0&&total<uint64_t(status.st_size>start?status.st_size-start:0)){static unsigned logged=0;
+        if(++logged<=24){char link[64],name[512]={};std::snprintf(link,sizeof link,"/proc/self/fd/%d",file->second);
+            ssize_t length=::readlink(link,name,sizeof name-1);const char* base=length>0?std::strrchr(name,'/'):nullptr;
+            NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Guest ReadFile short: %s wanted %u at %lld, got %u, file size %lld",
+                base?base+1:"?",unsigned(arg(2)),(long long)start,unsigned(total),(long long)status.st_size);}}
     if(arg(3))write32(arg(3),total);ret(1,5);
 }
 void writeFile(){

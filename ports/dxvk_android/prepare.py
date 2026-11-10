@@ -97,6 +97,11 @@ replace("src/d3d9/d3d9_swapchain.cpp", '    for (uint32_t i = 0; i < m_backBuffe
 # Persistent VkPipelineCache (pipeline_cache.cpp): no recompiling every pipeline each session.
 replace("src/vulkan/vulkan_presenter.cpp", '    m_vkd->vkDestroySwapchainKHR(m_vkd->device(), m_swapchain, nullptr);', '    if (m_swapchain != VK_NULL_HANDLE)\n      m_vkd->vkDestroySwapchainKHR(m_vkd->device(), m_swapchain, nullptr);')
 replace("src/vulkan/vulkan_presenter.cpp", '    m_vki->vkDestroySurfaceKHR(m_vki->instance(), m_surface, nullptr);', '    if (m_surface != VK_NULL_HANDLE)\n      m_vki->vkDestroySurfaceKHR(m_vki->instance(), m_surface, nullptr);\n    m_surface = VK_NULL_HANDLE;')
+# The surface keeps a reference to its ANativeWindow until DXVK destroys it
+# (android_wsi.cpp). Destroying a surface whose window Android already freed
+# crashed in the driver when the game came back from the background.
+replace("src/vulkan/vulkan_presenter.cpp", '#include "../wsi/wsi_presenter.h"\n', '#include "../wsi/wsi_presenter.h"\n\nextern "C" __attribute__((weak)) void dxvkAndroidSurfaceDestroyed(VkSurfaceKHR surface);\n')
+replace("src/vulkan/vulkan_presenter.cpp", 'm_vki->vkDestroySurfaceKHR(m_vki->instance(), m_surface, nullptr);', '{ m_vki->vkDestroySurfaceKHR(m_vki->instance(), m_surface, nullptr); if (dxvkAndroidSurfaceDestroyed) dxvkAndroidSurfaceDestroyed(m_surface); }')
 # PowerVR BXM (MT6855) faults inside vkCreateGraphicsPipelines: see pipeline_guard.h.
 shutil.copy2(pathlib.Path(__file__).parent / "pipeline_guard.h", args.output / "src/dxvk/dxvk_pipeline_guard.h")
 replace("src/dxvk/dxvk_graphics.cpp", '#include "dxvk_graphics.h"\n', '#include "dxvk_graphics.h"\n#include "dxvk_pipeline_guard.h"\n')

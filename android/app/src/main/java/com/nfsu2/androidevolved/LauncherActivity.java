@@ -442,8 +442,37 @@ public final class LauncherActivity extends Activity {
     // ---- Launch ----------------------------------------------------------------------------------------
 
     private void play() {
+        if (suggestLighterSettings()) return;
         if (android.os.Process.is64Bit() && GpuDrivers.selected(this) != null) probeDriver(true);
         else launch();
+    }
+
+    // SoCs whose GPU cannot run the game at 75-100% resolution: PowerVR BXM/GE83xx,
+    // Mali-G52/G57 MC1-2, Adreno 610/613/619. Moto g54 reports (MT6855) showed lag and
+    // audio cuts at native resolution. Asked once; the options stay the player's.
+    private static final String[] WEAK_GPU_SOCS = {"MT6855", "MT6765", "MT6762", "MT6768", "MT6769", "MT6785",
+            "MT6789", "MT6833", "MT6835", "T606", "T612", "T616", "T618", "UMS9230", "SC9863", "SM6225", "SM4350",
+            "SM4450", "SM6115"};
+
+    private boolean suggestLighterSettings() {
+        if (Build.VERSION.SDK_INT < 31 || GameOptions.prefs(this).getBoolean("light_settings_asked", false)) return false;
+        String soc = Build.SOC_MODEL == null ? "" : Build.SOC_MODEL.toUpperCase(java.util.Locale.ROOT);
+        boolean weak = false;
+        for (String model : WEAK_GPU_SOCS) if (soc.contains(model)) weak = true;
+        String resolution = GameOptions.get(this, GameOptions.RESOLUTION);
+        if (!weak || !(resolution.equals("100") || resolution.equals("75"))) return false;
+        GameOptions.prefs(this).edit().putBoolean("light_settings_asked", true).apply();
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Ajustes para tu teléfono")
+                .setMessage("La GPU de este teléfono no llega a resolución nativa o al 75%: el juego va lento y el sonido se corta. ¿Usar resolución al 50%? Puedes cambiarlo después en Opciones.")
+                .setPositiveButton("Usar ajustes ligeros", (dialog, which) -> {
+                    GameOptions.prefs(this).edit().putString(GameOptions.RESOLUTION, "50").apply();
+                    refreshOptions();
+                    play();
+                })
+                .setNegativeButton("Jugar así", (dialog, which) -> play())
+                .show();
+        return true;
     }
 
     private void launch() {
