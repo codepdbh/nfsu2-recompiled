@@ -345,6 +345,14 @@ void d3dDispatch(){
     static std::array<std::chrono::nanoseconds,4096> methodTime{};
     if(timed){auto spent=std::chrono::steady_clock::now()-bridgeStart;bridgeTime+=token==0x7e002110u?spent:spent*64;presentTime+=token==0x7e002110u?spent:std::chrono::nanoseconds{};
         methodTime[((token-0x7e000000u)/16u)&4095u]+=token==0x7e002110u?spent:spent*64;}
+    // IDirect3D9::CreateDevice: without D3DCREATE_FPU_PRESERVE (2) Windows d3d9
+    // sets the calling thread's x87 control word to single precision, round to
+    // nearest, all exceptions masked. DXVK does that only to the host FPU on x86
+    // ("SetupFPU: not supported on this arch" on arm64), so do it to the guest's.
+    // The game unmasks invalid/zero-divide/overflow at 0x005d253e before creating
+    // the device; left that way, the CRT floor/ceil take _except1 and the guest
+    // stops in kernel32!RaiseException from _raise_exc (0x00766fbe).
+    if(token==0x7e001100u&&result==0&&!(args[4]&2u))g_fpu_cw=uint16_t((g_fpu_cw&0xf0c0u)|0x003fu);
     if(token==0x7e002110u){nfs_widescreen_apply_frame_rate();lastPresentMs=steadyMs();startStallWatch();}
     if(token==0x7e002110u&&result==0){
         static FramePacer pacer;
