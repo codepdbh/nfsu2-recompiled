@@ -793,6 +793,13 @@ extern "C" recomp_func_t recomp_lookup_import(uint32_t va) {
         NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Guest import %s from %08x",imports[index].name.c_str(),g_cur_func);
     return imports[index].function;
 }
+extern "C" recomp_func_t nfs_icall_resolve(uint32_t va) {
+    // Sound, input, D3D9 and import stubs (0x7c000000..0x7fffffff): nothing lifted
+    // or overridden lives there, so the vtable calls of a frame skip both probes.
+    if(va-0x7c000000u<0x04000000u)return recomp_lookup_import(va);
+    recomp_func_t fn=recomp_lookup_manual(va);if(!fn)fn=recomp_lookup(va);
+    return fn?fn:recomp_lookup_import(va);
+}
 extern "C" void recomp_unresolved(const char* kind,uint32_t va,uint32_t from) {
     if(from==0x00725520u&&memory){
         uint32_t node=read32(0x8b446c);

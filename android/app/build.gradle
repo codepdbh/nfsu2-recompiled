@@ -11,7 +11,9 @@ android {
         versionName '0.14.14'
         // -PnfsAbi=armeabi-v7a builds the separate 32-bit APK.
         ndk { abiFilters(project.findProperty('nfsAbi') ?: 'arm64-v8a') }
-        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
+        // -PnfsCpu=cortex-a720 builds for one SoC; -PnfsFast enables NFS_GUEST_FAST (see CMakeLists.txt).
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static', "-DNFS_GUEST_CPU=${project.findProperty('nfsCpu') ?: ''}",
+            "-DNFS_GUEST_FAST=${project.hasProperty('nfsFast') ? 'ON' : 'OFF'}" } }
     }
     externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.30.5' } }
     // adrenotools opens its namespace hook libraries by path from nativeLibraryDir.

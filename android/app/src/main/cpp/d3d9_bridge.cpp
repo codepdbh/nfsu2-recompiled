@@ -4,6 +4,7 @@
 #include "vertex_formats.h"
 #include <d3d9.h>
 #include <algorithm>
+#include <array>
 #include <map>
 #include <type_traits>
 #include <unordered_map>
@@ -32,14 +33,18 @@ enum class Kind:uint32_t {D3D9=1,Device=2,Texture=3,Cube=4,Surface=5,VertexBuffe
     VertexShader=8,PixelShader=9,Declaration=10,StateBlock=11,Query=12,SwapChain=13,VolumeTexture=14,Volume=15};
 struct Object {IUnknown* native;Kind kind;uint32_t references=1;CompressedView compressed;uint32_t parent=0;uint32_t children=0;};
 std::unordered_map<uint32_t,Object> objects;
-// Nearly every call of a frame targets the same object (the device). Element
-// pointers of an unordered_map survive rehashing; only erasing an object
-// invalidates them, so retireGuestObject/shutdown drop this one-entry cache.
-uint32_t cachedObjectAddress=0;Object* cachedObject=nullptr;
+// Element pointers of an unordered_map survive rehashing; only erasing an
+// object invalidates them, so retireGuestObject/shutdown drop this cache.
+// Direct-mapped: one entry thrashed between the device and the texture or
+// buffer the game addressed just before (AddRef, GetLevelDesc, ...).
+struct CachedObject{uint32_t address=0;Object* object=nullptr;};
+std::array<CachedObject,16> objectCache{};
+void forgetObjects(){objectCache.fill({});}
 Object* findObject(uint32_t address){
-    if(address==cachedObjectAddress&&cachedObject)return cachedObject;
+    auto& slot=objectCache[(address>>4)&15u];
+    if(slot.address==address&&slot.object)return slot.object;
     auto found=objects.find(address);if(found==objects.end())return nullptr;
-    cachedObjectAddress=address;cachedObject=&found->second;return cachedObject;
+    slot={address,&found->second};return slot.object;
 }
 std::map<IUnknown*,uint32_t> addresses;
 void* guestBase;
@@ -79,7 +84,7 @@ template<class T>T* nativeObject(uint32_t address){
 }
 uint32_t wrapTexture(IDirect3DBaseTexture9* texture){if(!texture)return 0;switch(texture->GetType()){case D3DRTYPE_TEXTURE:return wrap(texture,Kind::Texture);case D3DRTYPE_CUBETEXTURE:return wrap(texture,Kind::Cube);case D3DRTYPE_VOLUMETEXTURE:return wrap(texture,Kind::VolumeTexture);default:throw std::runtime_error("Unknown D3D9 base texture type");}}
 void retireGuestObject(uint32_t address){
-    cachedObjectAddress=0;cachedObject=nullptr;
+    forgetObjects();
     auto found=objects.find(address);if(found==objects.end())return;
     uint32_t table;std::memcpy(&table,pointer(address),4);
     freeGuest(table);freeGuest(address);addresses.erase(found->second.native);objects.erase(found);
@@ -155,7 +160,7 @@ void shutdownD3D9Bridge(){
     for(uint32_t kind=15;kind;--kind)for(auto it=objects.begin();it!=objects.end();){
         if(static_cast<uint32_t>(it->second.kind)!=kind){++it;continue;}
         auto object=it->second;for(uint32_t n=0;n<object.references;++n)object.native->Release();
-        cachedObjectAddress=0;cachedObject=nullptr;
+        forgetObjects();
         uint32_t table;std::memcpy(&table,pointer(it->first),4);freeGuest(table);freeGuest(it->first);addresses.erase(object.native);it=objects.erase(it);
     }
     surfaceRequested=false;surfaceAvailable=false;
