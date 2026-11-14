@@ -50,7 +50,11 @@ void enterCritical() {
     // owner) instead of sleeping 1 ms per attempt; sleep only if it persists.
     if(!mutex->try_lock()){
         WaitScope scope("EnterCriticalSection",address);
-        for(unsigned spins=0;!mutex->try_lock();++spins){checkGuestProgress();yieldGuestMachine(spins<64?0:1);}
+        unsigned spins=0;
+        while(!mutex->try_lock()){
+            if(spins<64){++spins;checkGuestProgress();yieldGuestMachine(0);continue;}
+            blockGuestUntil([&]{return mutex->try_lock();},noDeadline,{mutex.get()});break;   // holds the mutex once ready
+        }
     }
     cs=criticalSections.find(address);
     if(cs==criticalSections.end()||cs->second!=mutex){mutex->unlock();throw GuestStop("Critical section deleted while waiting");}
@@ -62,7 +66,10 @@ void leaveCritical() {
     uint32_t address=arg(0); auto cs=criticalSections.find(address); uint32_t count=read32(address+8);
     if(cs==criticalSections.end()||!count||read32(address+12)!=guestThreadId) throw GuestStop("Unbalanced LeaveCriticalSection");
     write32(address+8,--count);write32(address+4,count-1);if(!count){write32(address+12,0);currentTrace().release(address);}cs->second->unlock();
-    if(!count&&pendingCriticalDeletes.erase(address))criticalSections.erase(cs);
+    if(!count){
+        signalGuestSync(cs->second.get());
+        if(pendingCriticalDeletes.erase(address))criticalSections.erase(cs);
+    }
     ret(0,1);
 }
 void deleteCritical() {
@@ -167,12 +174,13 @@ void systemInfo() {uint32_t out=arg(0);std::memset(ptr(out,36),0,36);write32(out
 void sleepShim() {
     uint32_t ms=arg(0);if(ms==UINT32_MAX)throw GuestStop("Infinite Sleep requires guest scheduler");
     WaitScope scope("Sleep",ms);
-    while(ms){checkGuestProgress();auto chunk=std::min(ms,50u);yieldGuestMachine(chunk);ms-=chunk;}
+    if(ms)blockGuestUntil([]{return false;},guestDeadline(ms));
     ret(0,1);
 }
 void sleepEx(){
     uint32_t ms=arg(0);if(!ms){checkGuestProgress();ret(0,2);return;}
-    while(ms){checkGuestProgress();auto chunk=std::min(ms,50u);yieldGuestMachine(chunk);if(ms!=UINT32_MAX)ms-=chunk;}
+    WaitScope scope("SleepEx",ms);
+    blockGuestUntil([]{return false;},guestDeadline(ms));
     ret(0,2);
 }
 void exitProcess() {throw GuestStop("Guest requested ExitProcess("+std::to_string(arg(0))+") from "+hex(g_cur_func));}
