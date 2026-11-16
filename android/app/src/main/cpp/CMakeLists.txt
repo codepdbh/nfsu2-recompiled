@@ -9,6 +9,13 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
 else()
     set(NFS_CUSTOM_DRIVERS OFF)
 endif()
+# -PnfsCpu=<cpu> (gradle) tunes every native target, DXVK included, for one
+# SoC: e.g. cortex-a720 for the Dimensity 8400 (ARMv9.2-A). Such a build does
+# not run on older cores. Empty = the portable ARMv8-A baseline.
+set(NFS_GUEST_CPU "" CACHE STRING "clang -mcpu value for all native code (empty = baseline)")
+if(NFS_GUEST_CPU)
+    add_compile_options("-mcpu=${NFS_GUEST_CPU}")
+endif()
 add_library(native_app_glue STATIC "${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c")
 target_include_directories(native_app_glue PUBLIC "${ANDROID_NDK}/sources/android/native_app_glue")
 get_filename_component(NFS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
@@ -108,8 +115,26 @@ if(SERVER_GEN_SOURCES)
 endif()
 target_compile_features(nfsu2_android PRIVATE cxx_std_17)
 target_compile_definitions(nfsu2_android PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
-target_compile_options(nfsu2_android PRIVATE -O2 -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)
+# Hidden by default: the lifted code reaches recomp_lookup*, the import bridges
+# and the override table on every indirect call, and default visibility sent
+# each hop through the PLT. JNIEXPORT keeps the Java entry points exported;
+# ANativeActivity_onCreate comes from native_app_glue. Unlike -Bsymbolic
+# (dropped: v0.14.7 startup crash on Android 13+) this leaves adrenotools alone.
+target_compile_options(nfsu2_android PRIVATE -O2 -fvisibility=hidden -fno-strict-aliasing -ffp-contract=off -Wall -Wextra -Werror -Wno-missing-field-initializers)
 target_link_options(nfsu2_android PRIVATE "-uANativeActivity_onCreate")
+# -PnfsFast (gradle): guest memory at a fixed host address so the lifted code
+# adds an immediate, no yield counter in lifted loops, no frame pointers. The
+# 4 GB reservation at 0x100000000 needs a 64-bit process; see arm64_guest.h.
+option(NFS_GUEST_FAST "Fixed guest base, no loop yields, no frame pointers" OFF)
+if(NFS_GUEST_FAST)
+    if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
+        message(FATAL_ERROR "NFS_GUEST_FAST needs arm64-v8a")
+    endif()
+    foreach(target nfs_guest nfsu2_android)
+        target_compile_definitions(${target} PRIVATE NFS_GUEST_FAST NFS_GUEST_FIXED_BASE=0x100000000ull)
+        target_compile_options(${target} PRIVATE -fomit-frame-pointer)
+    endforeach()
+endif()
 target_link_libraries(nfsu2_android PRIVATE native_app_glue android log vulkan dxvk_android aaudio dl)
 if(NFS_GUEST_LTO)
     target_link_options(nfsu2_android PRIVATE -flto=thin "-Wl,--thinlto-jobs=4"

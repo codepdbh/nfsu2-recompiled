@@ -34,3 +34,37 @@ static inline void nfs_guest_cpuid(uint32_t leaf) {
 }
 #undef CPUID
 #define CPUID(a,b,c,d) do { RECOMP_REGS_OUT(); nfs_guest_cpuid((a)); RECOMP_REGS_IN(); } while (0)
+// One resolver per indirect call instead of manual -> lifted -> import probes,
+// and no g_icall_* trace: nothing on Android reads it, and its four global
+// stores ran on each of the ~30k D3D9 vtable calls of a race frame.
+extern recomp_func_t nfs_icall_resolve(uint32_t va);
+#undef RECOMP_ICALL
+#define RECOMP_ICALL(target_va) do { \
+    uint32_t _va = (uint32_t)(target_va); \
+    recomp_func_t _fn = nfs_icall_resolve(_va); \
+    if (_fn) { \
+        uint32_t _caller = g_cur_func; \
+        PUSH32(esp, RECOMP_RETADDR); \
+        RECOMP_FLAGS_OUT(); RECOMP_REGS_OUT(); _fn(); RECOMP_REGS_IN(); \
+        g_cur_func = _caller; \
+    } else { RECOMP_MISS("ICALL", _va); eax = 0; } \
+} while (0)
+#undef RECOMP_ITAIL
+#define RECOMP_ITAIL(target_va) do { \
+    uint32_t _va = (uint32_t)(target_va); \
+    recomp_func_t _fn = nfs_icall_resolve(_va); \
+    if (_fn) { RECOMP_FLAGS_OUT(); RECOMP_REGS_OUT(); _fn(); RECOMP_REGS_IN(); } \
+    else if (_va != RECOMP_RETADDR) { RECOMP_MISS("ITAIL", _va); } \
+} while (0)
+#ifdef NFS_GUEST_FAST
+// Loop yields exist for a lifted spin-wait on another guest thread's flag;
+// this game synchronises through Win32 waits, which hand the machine over
+// themselves, and the counter was a global load/store in every loop iteration.
+#undef RECOMP_BACKEDGE
+#define RECOMP_BACKEDGE() ((void)0)
+// Guest memory is reserved at NFS_GUEST_FIXED_BASE (guest_memory.h): the base
+// is an immediate instead of a global that any guest store might alias and
+// that was therefore reloaded after each one.
+#undef ADDR
+#define ADDR(va) ((uintptr_t)(uint32_t)(va) + (uintptr_t)NFS_GUEST_FIXED_BASE)
+#endif
