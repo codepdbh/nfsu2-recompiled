@@ -59,6 +59,8 @@ uint32_t g_icall_trace[ICALL_TRACE_SIZE], g_icall_from[ICALL_TRACE_SIZE];
 uint32_t g_icall_trace_idx, g_icall_count;
 }
 
+// Defined with guestDrivingControls; guest_modules.inc posts a notice for the player.
+void postGuestNotice(const std::string& text);
 namespace {
 std::atomic<uint32_t> displayWidth{1280},displayHeight{720};
 std::atomic<uint32_t> renderWidth{0},renderHeight{0};
@@ -925,6 +927,9 @@ void setGuestPaused(bool paused) {
     }
 }
 bool guestDrivingControls() {return inputDrivingMode.load();}
+std::mutex guestNoticeMutex;std::string guestNotice;
+void postGuestNotice(const std::string& text){std::lock_guard<std::mutex> lock(guestNoticeMutex);guestNotice=text;}
+std::string takeGuestNotice(){std::lock_guard<std::mutex> lock(guestNoticeMutex);std::string text;text.swap(guestNotice);return text;}
 void setGuestPad(const float axes[6],uint32_t buttons,int hatX,int hatY){
     std::lock_guard<std::mutex> lock(inputMutex);
     for(unsigned i=0;i<6;++i)inputPad.axis[i]=std::max(-1.f,std::min(1.f,axes[i]));

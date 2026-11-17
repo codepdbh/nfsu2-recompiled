@@ -88,7 +88,7 @@ final class Diagnostics {
             add(zip, "informe.txt", info.toString().getBytes(StandardCharsets.UTF_8));
             add(zip, "logcat.txt", logcat(0));
             // The game's own log (game_log.h): kept after Android drops its logcat lines.
-            for (String name : new String[] {"game.log", "game-previous.log"}) {
+            for (String name : new String[] {"game.log", "game-previous.log", "game-older.log"}) {
                 File log = new File(context.getFilesDir(), name);
                 if (log.isFile()) try (java.io.FileInputStream input = new java.io.FileInputStream(log)) { add(zip, name, readLimited(input)); }
             }
@@ -151,6 +151,7 @@ final class Diagnostics {
 
     /** "20:30:40.892 W text" from a threadtime line, to save room in the link. */
     private static String compact(String line) {
+        if (line.contains(" pc ")) line = line.replaceAll("/data/app/\\S*/", "").replaceAll(" \\(BuildId: [0-9a-f]+\\)", "");
         String[] parts = line.trim().split("\\s+", 6);
         if (parts.length < 6) return line;
         String message = parts[5];

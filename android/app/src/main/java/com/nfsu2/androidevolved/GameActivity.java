@@ -38,6 +38,7 @@ public final class GameActivity extends NativeActivity {
     private static native void nativeKey(int scan, boolean down);
     private static native boolean nativeDrivingControls();
     private static native boolean nativeGamepadUsed();
+    private static native String nativeTakeNotice();
     private final boolean[] touchKeys=new boolean[256],sentKeys=new boolean[256];
     private boolean tiltLeft,tiltRight,tiltEnabled,tiltCalibrate=true;
     private float tiltFiltered,tiltNeutral,tiltSensitivity=1;
@@ -135,9 +136,14 @@ public final class GameActivity extends NativeActivity {
             touchControls.setGameMode(nativeDrivingControls());
             // Playing on with the pad after a touch revealed the controls hides them again.
             if(nativeGamepadUsed())touchControls.gamepadUsed();
+            if("server.dll".equals(nativeTakeNotice()))showNotice("Carrera LAN","Tu server.dll no es la versión con la que se preparó esta app, así que este teléfono no puede crear una carrera LAN. Sí puedes unirte a una que cree otro jugador. Para crearla, copia en la carpeta nfsu2 el server.dll de la misma instalación de PC de donde sacaste el ejecutable del juego.");
             touchControls.postDelayed(this,250);
         }
     };
+    private void showNotice(String title,String text){
+        new android.app.AlertDialog.Builder(this,android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(title).setMessage(text).setPositiveButton("Aceptar",null).show();
+    }
     private static native void nativeTypeText(String value, boolean replace);
     private static native void nativePointer(float x, float y, int phase);
     private static native void nativeLanguage(String language);

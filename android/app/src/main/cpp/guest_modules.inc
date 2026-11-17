@@ -63,8 +63,18 @@ uint32_t loadGuestModule(const std::string& name){
     if(nt.Signature!=0x4550||nt.FileHeader.Machine!=0x14c||opt.Magic!=0x10b||!(nt.FileHeader.Characteristics&0x2000))
         throw GuestStop(name+": expected an x86 PE32 DLL");
     uint32_t base=spec->base,size=opt.SizeOfImage,entry=base+opt.AddressOfEntryPoint;
-    if(opt.ImageBase!=spec->preferredBase||size!=spec->imageSize||!recomp_lookup(entry))
+    if(opt.ImageBase!=spec->preferredBase||size!=spec->imageSize||!recomp_lookup(entry)){
+        // Another build of server.dll than the one the code was lifted from: hosting a LAN
+        // race fails as with a missing DLL (the game survives that) instead of stopping
+        // the game. Its identity goes to the log so the build can be supported later.
+        if(name=="server.dll"){
+            uint32_t sum=0;for(unsigned char byte:file)sum=sum*31+byte;
+            NFS_RUNTIME_LOG(ANDROID_LOG_ERROR,"NFSU2","%s: not the build the code was lifted from (base %s, size %s, entry %s, timestamp %08x, %zu bytes, sum %08x); LoadLibrary fails",
+                name.c_str(),hex(opt.ImageBase).c_str(),hex(size).c_str(),hex(opt.AddressOfEntryPoint).c_str(),nt.FileHeader.TimeDateStamp,file.size(),sum);
+            postGuestNotice("server.dll");return 0;
+        }
         throw GuestStop(name+": file layout does not match the lifted code (base "+hex(opt.ImageBase)+", size "+hex(size)+")");
+    }
     memory->commit(base,size);
     std::memset(ptr(base,size),0,size);
     if(opt.SizeOfHeaders>file.size()||opt.SizeOfHeaders>size)throw GuestStop(name+": truncated PE headers");

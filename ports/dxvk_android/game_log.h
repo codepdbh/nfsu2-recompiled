@@ -24,6 +24,9 @@ namespace {
         std::string directory="/data/data/"+std::string(command,size_t(game-command))+"/files";
         mkdir(directory.c_str(),0700);
         path=directory+"/game.log";
+        // Three sessions: players often start the game again once or twice after a
+        // crash before sending the report, and the crashed session was gone.
+        std::rename((directory+"/game-previous.log").c_str(),(directory+"/game-older.log").c_str());
         std::rename(path.c_str(),(directory+"/game-previous.log").c_str());
         FILE* file=std::fopen(path.c_str(),"w");
         if (file) setvbuf(file,nullptr,_IOLBF,8192);

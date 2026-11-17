@@ -36,7 +36,10 @@ inline const cpu_set_t& performanceCores(bool* useful=nullptr){
         }
         cpu_set_t chosen;CPU_ZERO(&chosen);unsigned count=0;
         for(unsigned cpu=0;cpu<maximum;++cpu)if(speed[cpu]>0&&speed[cpu]*10>=fastest*6){CPU_SET(cpu,&chosen);++count;}
-        any=count>0&&count<online;
+        // Only with four or more fast cores. On 2+6 designs (Helio G85, MT6769:
+        // capacities 516x6, 1024x2) every guest thread squeezed onto two cores and
+        // the game ran slower than when Android placed them (U1/U2 reports).
+        any=count>=4&&count<online;
         NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","CPU cores (%s): %s; guest threads on %u of %u",file,report.c_str(),any?count:online,online);
         return chosen;
     }();
