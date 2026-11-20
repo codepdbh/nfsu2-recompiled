@@ -846,7 +846,7 @@ extern "C" int nfs_android_resolution(){
 }
 
 std::string connectGuestRuntime(const char* executable) {
-    stayOnPerformanceCores();
+    stayOnPerformanceCores(true);  // the guest main thread
     std::unique_lock<MachineMutex> guard(machine);machineLease=&guard;
     if (memory) return "Runtime guest ya inicializado";
     State original; original.save();

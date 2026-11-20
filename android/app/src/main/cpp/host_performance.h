@@ -21,8 +21,14 @@ inline long readCpuValue(unsigned cpu,const char* file){
 }
 // Cores with at least 60% of the fastest one; empty when that is all of them or
 // the kernel does not say (nothing to choose, so the affinity is left alone).
-inline const cpu_set_t& performanceCores(bool* useful=nullptr){
-    static bool any=false;
+// Fast cores: at least 60% of the fastest one's capacity. With four or more, every
+// guest thread stays on them. With fewer (2+6 designs: Helio G85/G99, capacities
+// 516x6 and 1024x2), only the game's main thread does: all guest threads on two
+// cores ran slower than Android's placement (U1/U2 reports), while leaving the main
+// thread free made Most Wanted lag again on a Helio G99 (MW #892).
+enum class CorePolicy {none,mainThread,allThreads};
+inline const cpu_set_t& performanceCores(CorePolicy* policy=nullptr){
+    static CorePolicy chosenPolicy=CorePolicy::none;
     static const cpu_set_t set=[]{
         constexpr unsigned maximum=32;long speed[maximum];unsigned online=0;long fastest=0;
         const char* file="cpu_capacity";
@@ -36,19 +42,19 @@ inline const cpu_set_t& performanceCores(bool* useful=nullptr){
         }
         cpu_set_t chosen;CPU_ZERO(&chosen);unsigned count=0;
         for(unsigned cpu=0;cpu<maximum;++cpu)if(speed[cpu]>0&&speed[cpu]*10>=fastest*6){CPU_SET(cpu,&chosen);++count;}
-        // Only with four or more fast cores. On 2+6 designs (Helio G85, MT6769:
-        // capacities 516x6, 1024x2) every guest thread squeezed onto two cores and
-        // the game ran slower than when Android placed them (U1/U2 reports).
-        any=count>=4&&count<online;
-        NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","CPU cores (%s): %s; guest threads on %u of %u",file,report.c_str(),any?count:online,online);
+        chosenPolicy=count==0||count>=online?CorePolicy::none:count>=4?CorePolicy::allThreads:CorePolicy::mainThread;
+        NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","CPU cores (%s): %s; %u fast; %s",file,report.c_str(),count,
+            chosenPolicy==CorePolicy::allThreads?"guest threads on the fast cores":
+            chosenPolicy==CorePolicy::mainThread?"main guest thread on the fast cores":"no affinity");
         return chosen;
     }();
-    if(useful)*useful=any;
+    if(policy)*policy=chosenPolicy;
     return set;
 }
-inline void stayOnPerformanceCores(){
-    bool useful=false;const cpu_set_t& set=performanceCores(&useful);
-    if(useful&&sched_setaffinity(0,sizeof set,&set))
+inline void stayOnPerformanceCores(bool mainThread=false){
+    CorePolicy policy=CorePolicy::none;const cpu_set_t& set=performanceCores(&policy);
+    bool pin=policy==CorePolicy::allThreads||(policy==CorePolicy::mainThread&&mainThread);
+    if(pin&&sched_setaffinity(0,sizeof set,&set))
         NFS_RUNTIME_LOG(ANDROID_LOG_WARN,"NFSU2","Guest thread affinity refused: errno %d",errno);
 }
 

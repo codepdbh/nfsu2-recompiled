@@ -401,7 +401,7 @@ void inputDispatch(){
         if(out)for(uint32_t i=0;i<amount;++i)std::memcpy(ptr(out+i*bytes,bytes),&object.pending[i],bytes);
         uint32_t status=object.overflow?1:0;write32(count,amount);
         if(!(flags&1)){for(uint32_t i=0;i<amount;++i)object.pending.pop_front();object.overflow=false;}
-        if(amount)NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Keyboard buffered input delivered %u events peek=%u from=%08x",amount,flags&1,g_cur_func);ret(status,5);return;}
+        if(amount){static unsigned deliveries=0;if(++deliveries<=32||!(deliveries&255))NFS_RUNTIME_LOG(ANDROID_LOG_INFO,"NFSU2","Keyboard buffered input delivered %u events peek=%u from=%08x (%u so far)",amount,flags&1,g_cur_func,deliveries);}ret(status,5);return;}
     case 11:{uint32_t format=arg(1);if(object.acquired){ret(0x800700aa,2);return;}
         if(!format||read32(format)!=24||read32(format+4)!=16){ret(diInvalid,2);return;}
         uint32_t size=read32(format+12),count=read32(format+16),array=read32(format+20);
