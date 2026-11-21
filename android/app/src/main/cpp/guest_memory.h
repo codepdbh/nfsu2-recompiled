@@ -4,6 +4,9 @@
 #include <cstring>
 #include <stdexcept>
 #include <sys/mman.h>
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
 #include <unistd.h>
 #include <map>
 #include <algorithm>
@@ -36,8 +39,17 @@ private:
     }
 public:
     GuestMemory() {
+#ifdef NFS_GUEST_FIXED_BASE
+        // The lifted code adds this base as an immediate (arm64_guest.h), so the
+        // reservation must land exactly there or the build cannot run at all.
+        auto wanted = reinterpret_cast<void*>(uintptr_t(NFS_GUEST_FIXED_BASE));
+        base_ = mmap(wanted, size_t(size), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+        if (base_ != MAP_FAILED && base_ != wanted) { munmap(base_, size_t(size)); base_ = MAP_FAILED; }
+        if (base_ == MAP_FAILED) throw std::runtime_error("Guest address space is not free at the fixed base this build was compiled for");
+#else
         base_ = mmap(nullptr, size_t(size), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (base_ == MAP_FAILED) throw std::runtime_error("Guest address-space reservation failed");
+#endif
     }
     GuestMemory(const GuestMemory&) = delete;
     GuestMemory& operator=(const GuestMemory&) = delete;

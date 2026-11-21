@@ -80,7 +80,7 @@ case 4:{*argumentCount=3;return resource->GetDeclaration(static_cast<D3DVERTEXEL
 if(kind==11){auto resource=static_cast<IDirect3DStateBlock9*>(object);switch(method){
 case 3:{*argumentCount=2;IDirect3DDevice9* result1=nullptr;HRESULT status=resource->GetDevice(args[1]?&result1:nullptr);if(args[1])write(args[1],SUCCEEDED(status)?wrap(result1,Kind::Device):0);return status;}
 case 4:{*argumentCount=1;return resource->Capture();}
-case 5:{*argumentCount=1;return resource->Apply();}
+case 5:{*argumentCount=1;invalidateShaderConstants();return resource->Apply();}
 }}
 if(kind==12){auto resource=static_cast<IDirect3DQuery9*>(object);switch(method){
 case 3:{*argumentCount=2;IDirect3DDevice9* result1=nullptr;HRESULT status=resource->GetDevice(args[1]?&result1:nullptr);if(args[1])write(args[1],SUCCEEDED(status)?wrap(result1,Kind::Device):0);return status;}

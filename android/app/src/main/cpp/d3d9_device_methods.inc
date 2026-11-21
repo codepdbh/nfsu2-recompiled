@@ -51,8 +51,8 @@ case 56:{*argumentCount=3;return device->GetClipPlane(static_cast<DWORD>(args[1]
 case 57:{*argumentCount=3;return device->SetRenderState(static_cast<D3DRENDERSTATETYPE>(args[1]),static_cast<DWORD>(args[2]));}
 case 58:{*argumentCount=3;return device->GetRenderState(static_cast<D3DRENDERSTATETYPE>(args[1]),static_cast<DWORD*>(pointer(args[2])));}
 case 59:{*argumentCount=3;IDirect3DStateBlock9* object2=nullptr;HRESULT status=device->CreateStateBlock(static_cast<D3DSTATEBLOCKTYPE>(args[1]),args[2]?&object2:nullptr);if(args[2])write(args[2],SUCCEEDED(status)?wrap(object2,Kind::StateBlock):0);return status;}
-case 60:{*argumentCount=1;return device->BeginStateBlock();}
-case 61:{*argumentCount=2;IDirect3DStateBlock9* object1=nullptr;HRESULT status=device->EndStateBlock(args[1]?&object1:nullptr);if(args[1])write(args[1],SUCCEEDED(status)?wrap(object1,Kind::StateBlock):0);return status;}
+case 60:{*argumentCount=1;HRESULT status=device->BeginStateBlock();if(SUCCEEDED(status))recordingStateBlock=true;return status;}
+case 61:{*argumentCount=2;IDirect3DStateBlock9* object1=nullptr;recordingStateBlock=false;HRESULT status=device->EndStateBlock(args[1]?&object1:nullptr);if(args[1])write(args[1],SUCCEEDED(status)?wrap(object1,Kind::StateBlock):0);return status;}
 case 62:{*argumentCount=2;return device->SetClipStatus(static_cast<const D3DCLIPSTATUS9*>(pointer(args[1])));}
 case 63:{*argumentCount=2;return device->GetClipStatus(static_cast<D3DCLIPSTATUS9*>(pointer(args[1])));}
 case 64:{*argumentCount=3;IDirect3DBaseTexture9* object2=nullptr;HRESULT status=device->GetTexture(static_cast<DWORD>(args[1]),args[2]?&object2:nullptr);if(args[2])write(args[2],SUCCEEDED(status)?wrapTexture(object2):0);return status;}
@@ -85,7 +85,7 @@ case 90:{*argumentCount=2;return device->GetFVF(static_cast<DWORD*>(pointer(args
 case 91:{*argumentCount=3;IDirect3DVertexShader9* object2=nullptr;HRESULT status=device->CreateVertexShader(static_cast<const DWORD*>(pointer(args[1])),args[2]?&object2:nullptr);if(args[2])write(args[2],SUCCEEDED(status)?wrap(object2,Kind::VertexShader):0);return status;}
 case 92:{*argumentCount=2;return device->SetVertexShader(nativeObject<IDirect3DVertexShader9>(args[1]));}
 case 93:{*argumentCount=2;IDirect3DVertexShader9* object1=nullptr;HRESULT status=device->GetVertexShader(args[1]?&object1:nullptr);if(args[1])write(args[1],SUCCEEDED(status)?wrap(object1,Kind::VertexShader):0);return status;}
-case 94:{*argumentCount=4;return device->SetVertexShaderConstantF(static_cast<UINT>(args[1]),static_cast<const float*>(pointer(args[2])),static_cast<UINT>(args[3]));}
+case 94:{*argumentCount=4;auto data=static_cast<const float*>(pointer(args[2]));return setShaderConstants(vertexConstants,args[1],data,args[3],[&]{return device->SetVertexShaderConstantF(static_cast<UINT>(args[1]),data,static_cast<UINT>(args[3]));});}
 case 95:{*argumentCount=4;return device->GetVertexShaderConstantF(static_cast<UINT>(args[1]),static_cast<float*>(pointer(args[2])),static_cast<UINT>(args[3]));}
 case 96:{*argumentCount=4;return device->SetVertexShaderConstantI(static_cast<UINT>(args[1]),static_cast<const int*>(pointer(args[2])),static_cast<UINT>(args[3]));}
 case 97:{*argumentCount=4;return device->GetVertexShaderConstantI(static_cast<UINT>(args[1]),static_cast<int*>(pointer(args[2])),static_cast<UINT>(args[3]));}
@@ -100,7 +100,7 @@ case 105:{*argumentCount=2;IDirect3DIndexBuffer9* object1=nullptr;HRESULT status
 case 106:{*argumentCount=3;IDirect3DPixelShader9* object2=nullptr;HRESULT status=device->CreatePixelShader(static_cast<const DWORD*>(pointer(args[1])),args[2]?&object2:nullptr);if(args[2])write(args[2],SUCCEEDED(status)?wrap(object2,Kind::PixelShader):0);return status;}
 case 107:{*argumentCount=2;return device->SetPixelShader(nativeObject<IDirect3DPixelShader9>(args[1]));}
 case 108:{*argumentCount=2;IDirect3DPixelShader9* object1=nullptr;HRESULT status=device->GetPixelShader(args[1]?&object1:nullptr);if(args[1])write(args[1],SUCCEEDED(status)?wrap(object1,Kind::PixelShader):0);return status;}
-case 109:{*argumentCount=4;return device->SetPixelShaderConstantF(static_cast<UINT>(args[1]),static_cast<const float*>(pointer(args[2])),static_cast<UINT>(args[3]));}
+case 109:{*argumentCount=4;auto data=static_cast<const float*>(pointer(args[2]));return setShaderConstants(pixelConstants,args[1],data,args[3],[&]{return device->SetPixelShaderConstantF(static_cast<UINT>(args[1]),data,static_cast<UINT>(args[3]));});}
 case 110:{*argumentCount=4;return device->GetPixelShaderConstantF(static_cast<UINT>(args[1]),static_cast<float*>(pointer(args[2])),static_cast<UINT>(args[3]));}
 case 111:{*argumentCount=4;return device->SetPixelShaderConstantI(static_cast<UINT>(args[1]),static_cast<const int*>(pointer(args[2])),static_cast<UINT>(args[3]));}
 case 112:{*argumentCount=4;return device->GetPixelShaderConstantI(static_cast<UINT>(args[1]),static_cast<int*>(pointer(args[2])),static_cast<UINT>(args[3]));}
